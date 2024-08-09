@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using NickStrupat;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace UnitTests;
 
-public class AsyncLockTests
+public class AsyncLockTests(ITestOutputHelper output)
 {
 	[Fact]
 	public async Task ProvideMutualExclusion()
@@ -99,6 +101,8 @@ public class AsyncLockTests
 		}
 		Assert.NotEqual(5000ul, asyncLock.TcsCtorCount);
 		Assert.NotEqual(0ul, asyncLock.TcsCtorCount);
+		Assert.NotEqual(1ul, asyncLock.TcsCtorCount);
+		output.WriteLine(asyncLock.TcsCtorCount.ToString());
 	}
 	#endif
 	
