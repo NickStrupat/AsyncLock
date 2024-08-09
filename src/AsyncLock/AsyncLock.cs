@@ -51,7 +51,7 @@ public sealed class AsyncLock
 			}
 			else
 			{
-				// otherwise, we know that someone else has taken the lock, so we can safely set the result which allows the next in line to proceed into the lock
+				// Otherwise we know that someone else is waiting to enter the lock, so we can safely set the result of our 'next' TCS, which is what the other waiter retrieved when they entered this method.
 				next.SetResult();
 			}
 		}
