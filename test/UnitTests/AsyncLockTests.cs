@@ -107,11 +107,12 @@ public class AsyncLockTests(ITestOutputHelper output)
 	#endif
 	
 	[Fact]
-	public async Task DoesNotAllocateWhenNotContendedAndDelegateDoesNotAllocate()
+	public async Task DoesNotAllocateWhenNotContended()
 	{
 		var noOp = () => Task.CompletedTask;
 		var asyncLock = new AsyncLock();
-		for(var x = 0; x != 10_000; ++x)
+		const int noAllocationRetryLimit = 10_000;
+		for(var x = 0; x != noAllocationRetryLimit; ++x)
 		{
 			var mem = GC.GetTotalMemory(true);
 			for (var i = 0; i < 1000; ++i)
@@ -120,7 +121,8 @@ public class AsyncLockTests(ITestOutputHelper output)
 			}
 			var mem2 = GC.GetTotalMemory(true);
 			if (mem == mem2)
-				break;
+				return;
 		}
+		Assert.Fail($"Memory allocation detected during all {noAllocationRetryLimit} iterations");
 	}
 }
