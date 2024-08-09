@@ -8,7 +8,7 @@ namespace NickStrupat;
 public sealed class AsyncLock
 {
 	private Task task = Task.CompletedTask;
-	private TaskCompletionSource? cachedTcs;
+	private TaskCompletionSource? cachedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 	public async ValueTask LockAsync(Func<Task> whenLocked)
 	{
@@ -35,7 +35,7 @@ public sealed class AsyncLock
 		#if DEBUG
 		Interlocked.Increment(ref TcsCtorCount);
 		#endif
-		return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		return new(TaskCreationOptions.RunContinuationsAsynchronously);
 	}
 	#if DEBUG
 	public UInt64 TcsCtorCount;

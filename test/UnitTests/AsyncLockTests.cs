@@ -62,14 +62,14 @@ public class AsyncLockTests(ITestOutputHelper output)
 	
 	#if DEBUG
 	[Fact]
-	public async Task ReusesTaskCompletionSourceWhenNotContended()
+	public async Task ReusesCachedTaskCompletionSourceWhenNotContended()
 	{
 		var asyncLock = new AsyncLock();
 		for (var i = 0; i < 1000; ++i)
 		{
 			await asyncLock.LockAsync(async () => await Task.Yield());
 		}
-		Assert.Equal(1ul, asyncLock.TcsCtorCount);
+		Assert.Equal(0ul, asyncLock.TcsCtorCount);
 	}
 	
 	[Fact]
