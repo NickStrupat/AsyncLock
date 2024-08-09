@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AsyncLock", "src\AsyncLock\AsyncLock.csproj", "{03269F1C-6488-4637-8BBD-63DA8F3A5F12}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3C9BB282-2AD5-4B82-A94D-8F0AB51F9D2B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{DC3844CD-721E-41E6-92D1-4B37BD0AD837}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnitTests", "test\UnitTests\UnitTests.csproj", "{C6C0426F-2732-46F7-BA41-821508689EF6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{03269F1C-6488-4637-8BBD-63DA8F3A5F12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03269F1C-6488-4637-8BBD-63DA8F3A5F12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03269F1C-6488-4637-8BBD-63DA8F3A5F12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03269F1C-6488-4637-8BBD-63DA8F3A5F12}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6C0426F-2732-46F7-BA41-821508689EF6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6C0426F-2732-46F7-BA41-821508689EF6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6C0426F-2732-46F7-BA41-821508689EF6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6C0426F-2732-46F7-BA41-821508689EF6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{03269F1C-6488-4637-8BBD-63DA8F3A5F12} = {3C9BB282-2AD5-4B82-A94D-8F0AB51F9D2B}
+		{C6C0426F-2732-46F7-BA41-821508689EF6} = {DC3844CD-721E-41E6-92D1-4B37BD0AD837}
+	EndGlobalSection
+EndGlobal
