@@ -74,7 +74,7 @@ public sealed class AsyncLock : IAsyncLock
 			return true;
 		}
 
-		// Otherwise we know that someone else is waiting to enter the lock, so we can safely set the result of our 'next' TCS, which is what the other waiter retrieved when they entered this method.
+		// Otherwise we know that someone else is waiting to enter the lock.
 		return false;
 	}
 
