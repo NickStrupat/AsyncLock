@@ -190,6 +190,81 @@ public class AsyncLockTests(ITestOutputHelper output)
 	}
 
 	[Fact]
+	public async Task CancellationDoesNotBreakMutualExclusion()
+	{
+		// This test reproduces a race where a cancelled waiter's ContinueWith
+		// completes a TCS that gets reused by a later waiter, allowing two
+		// callers into the critical section simultaneously.
+		//
+		// Sequence:
+		// 1. A holds the lock (swapped in tcs0)
+		// 2. B queues behind A (swapped in tcs1, awaits tcs0.Task)
+		// 3. B is cancelled — sets continuation: tcs0.Task → tcs1.SetResult()
+		//    TryPutBackCachedTask succeeds, caching tcs1
+		// 4. C queues — grabs tcs1 from cache, awaits tcs0.Task
+		// 5. D queues behind C — awaits tcs1.Task
+		// 6. A finishes — calls tcs0.SetResult()
+		//    → C wakes up (correct)
+		//    → rogue continuation fires tcs1.SetResult() → D wakes up (BUG!)
+
+		var asyncLock = new AsyncLock();
+
+		// A acquires and holds the lock
+		var releaseA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var aAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var taskA = asyncLock.LockAsync(async () =>
+		{
+			aAcquired.SetResult();
+			await releaseA.Task;
+		});
+		await aAcquired.Task;
+
+		// B queues behind A (LockAsync runs synchronously until the await, so B is queued when it returns)
+		using var bCts = new CancellationTokenSource();
+		var taskB = asyncLock.LockAsync(() => Task.CompletedTask, bCts.Token);
+
+		// Cancel B — this sets up the rogue continuation on A's underlying task
+		await bCts.CancelAsync();
+		await Assert.ThrowsAsync<TaskCanceledException>(() => taskB);
+
+		// C queues — grabs B's cached TCS, awaits A's task
+		var releaseC = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var cAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var taskC = asyncLock.LockAsync(async () =>
+		{
+			cAcquired.SetResult();
+			await releaseC.Task;
+		});
+
+		// D queues behind C — awaits the TCS that has the rogue continuation
+		var dAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var releaseD = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var taskD = asyncLock.LockAsync(async () =>
+		{
+			dAcquired.SetResult();
+			await releaseD.Task;
+		});
+
+		// Release A — C should acquire, but the rogue continuation also releases D
+		releaseA.SetResult();
+		await taskA;
+		await cAcquired.Task;
+
+		// D should NOT have acquired the lock — C is still holding it
+		await Task.Delay(200);
+		Assert.False(dAcquired.Task.IsCompleted,
+			"Mutual exclusion violated: D entered the critical section while C still holds the lock. " +
+			"The cancelled waiter's ContinueWith prematurely completed the reused TCS.");
+
+		// Clean up
+		releaseC.SetResult();
+		await taskC;
+		await dAcquired.Task;
+		releaseD.SetResult();
+		await taskD;
+	}
+
+	[Fact]
 	public async Task ReusesCachedTaskCompletionSourceWhenCancelledButNotContended()
 	{
 		var asyncLock = new AsyncLock();

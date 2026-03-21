@@ -40,10 +40,12 @@ public sealed class AsyncLock : IAsyncLock
 		}
 		catch (OperationCanceledException)
 		{
-			// We were canceled while waiting, so configure the previous task to allow the next waiter to proceed when it completes.
-			_ = prev.ContinueWith(_ => next.SetResult(), TaskContinuationOptions.ExecuteSynchronously);
-
-			_ = TryPutBackCachedTask(prev, next);
+			if (!TryPutBackCachedTask(prev, next))
+			{
+				// Someone queued behind us on next.Task - wire them through to prev so they proceed when prev completes.
+				_ = prev.ContinueWith(_ => next.SetResult(), TaskContinuationOptions.ExecuteSynchronously);
+			}
+			// else: no one queued behind us, task restored to prev, next cached cleanly with no continuation.
 			throw;
 		}
 
