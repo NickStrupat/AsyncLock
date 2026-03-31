@@ -38,16 +38,9 @@ public sealed class AsyncLock : IAsyncLock
 			// Wait for the previous task to complete. This is where we wait in line for the lock.
 			await prev.WaitAsync(cancellationToken).ConfigureAwait(false);
 		}
-		catch (OperationCanceledException)
+		catch (OperationCanceledException) when (PutBackOrBridge(prev, next))
 		{
-			if (!TryPutBackCachedTask(prev, next))
-			{
-				// Someone queued behind us on next.Task - wire them through to prev so they proceed when prev completes.
-				// Uses the state-object overload with a static lambda to avoid a per-call closure allocation.
-				_ = prev.ContinueWith(static (_, state) => ((TaskCompletionSource)state!).SetResult(), next, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-			}
-			// else: no one queued behind us, task restored to prev, next cached cleanly with no continuation.
-			throw;
+			// unreachable — filter always returns false
 		}
 
 		try
@@ -61,6 +54,23 @@ public sealed class AsyncLock : IAsyncLock
 			if (!TryPutBackCachedTask(prev, next))
 				next.SetResult();
 		}
+	}
+
+	/// <summary>
+	/// Exception filter that handles cancellation cleanup without catching the exception.
+	/// If no one queued behind us, restores the cached TCS. Otherwise, wires the next waiter through to prev.
+	/// Always returns false so the exception propagates untouched.
+	/// </summary>
+	private Boolean PutBackOrBridge(Task prev, TaskCompletionSource next)
+	{
+		if (!TryPutBackCachedTask(prev, next))
+		{
+			// Someone queued behind us on next.Task - wire them through to prev so they proceed when prev completes.
+			// Uses the state-object overload with a static lambda to avoid a per-call closure allocation.
+			_ = prev.ContinueWith(static (_, state) => ((TaskCompletionSource)state!).SetResult(), next, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+		}
+		// else: no one queued behind us, task restored to prev, next cached cleanly with no continuation.
+		return false;
 	}
 
 	private Boolean TryPutBackCachedTask(Task prev, TaskCompletionSource next)
