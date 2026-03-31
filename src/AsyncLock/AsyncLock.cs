@@ -43,7 +43,8 @@ public sealed class AsyncLock : IAsyncLock
 			if (!TryPutBackCachedTask(prev, next))
 			{
 				// Someone queued behind us on next.Task - wire them through to prev so they proceed when prev completes.
-				_ = prev.ContinueWith(_ => next.SetResult(), TaskContinuationOptions.ExecuteSynchronously);
+				// Uses the state-object overload with a static lambda to avoid a per-call closure allocation.
+				_ = prev.ContinueWith(static (_, state) => ((TaskCompletionSource)state!).SetResult(), next, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 			}
 			// else: no one queued behind us, task restored to prev, next cached cleanly with no continuation.
 			throw;
