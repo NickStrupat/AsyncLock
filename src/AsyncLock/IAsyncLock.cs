@@ -6,10 +6,10 @@ namespace NickStrupat;
 
 public interface IAsyncLock<TReleaser> where TReleaser : IDisposable
 {
-	Task<TReleaser> LockAsync(CancellationToken cancellationToken);
+	ValueTask<TReleaser> LockAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IAsyncLock
 {
-	Task LockAsync(Func<Task> whenLocked, CancellationToken cancellationToken = default);
+	ValueTask LockAsync(Func<ValueTask> whenLocked, CancellationToken cancellationToken = default);
 }

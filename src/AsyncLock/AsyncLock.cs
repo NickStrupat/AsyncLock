@@ -23,9 +23,10 @@ public sealed class AsyncLock : IAsyncLock
 	/// <param name="whenLocked">The delegate to execute when the lock is acquired.</param>
 	/// <param name="cancellationToken">The cancellation token that can be used to cancel waiting for the lock.</param>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
-	public async Task LockAsync(Func<Task> whenLocked, CancellationToken cancellationToken = default)
+	public async ValueTask LockAsync(Func<ValueTask> whenLocked, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(whenLocked);
+		cancellationToken.ThrowIfCancellationRequested();
 
 		// Atomically clear the cached TCS and retrieve the previous value. If it was null, create a new one.
 		var next = Interlocked.Exchange(ref cachedTcs, null) ?? CreateTcs();

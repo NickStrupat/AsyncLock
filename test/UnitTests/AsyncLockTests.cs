@@ -109,7 +109,7 @@ public class AsyncLockTests(ITestOutputHelper output)
 	[Fact]
 	public async Task DoesNotAllocateWhenNotContended()
 	{
-		var noOp = async () => { };
+		Func<ValueTask> noOp = () => ValueTask.CompletedTask;
 		var asyncLock = new AsyncLock();
 		const int noAllocationRetryLimit = 10_000;
 		for(var x = 0; x != noAllocationRetryLimit; ++x)
@@ -170,7 +170,7 @@ public class AsyncLockTests(ITestOutputHelper output)
 		var thirdLockTask = asyncLock.LockAsync(() =>
 			{
 				thirdLockTaken.SetResult();
-				return Task.CompletedTask;
+				return ValueTask.CompletedTask;
 			},
 			CancellationToken.None
 		);
@@ -221,11 +221,11 @@ public class AsyncLockTests(ITestOutputHelper output)
 
 		// B queues behind A (LockAsync runs synchronously until the await, so B is queued when it returns)
 		using var bCts = new CancellationTokenSource();
-		var taskB = asyncLock.LockAsync(() => Task.CompletedTask, bCts.Token);
+		var taskB = asyncLock.LockAsync(() => ValueTask.CompletedTask, bCts.Token);
 
 		// Cancel B — this sets up the rogue continuation on A's underlying task
 		await bCts.CancelAsync();
-		await Assert.ThrowsAsync<TaskCanceledException>(() => taskB);
+		await Assert.ThrowsAsync<TaskCanceledException>(taskB.AsTask);
 
 		// C queues — grabs B's cached TCS, awaits A's task
 		var releaseC = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
