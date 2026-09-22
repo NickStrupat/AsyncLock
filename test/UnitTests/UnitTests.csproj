@@ -29,6 +29,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\AsyncLock\AsyncLock.csproj" />
+      <ProjectReference Include="..\..\src\Candidates\Candidates.csproj" />
     </ItemGroup>
 
 </Project>

@@ -5,6 +5,26 @@
         <RootNamespace>NickStrupat</RootNamespace>
         <Nullable>enable</Nullable>
         <WarningsAsErrors>Nullable</WarningsAsErrors>
+
+        <WeaverConfiguration>
+            <Weavers>
+                <RuntimeNullables CheckOutputs="true"/>
+            </Weavers>
+        </WeaverConfiguration>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="RuntimeNullables.Fody" Version="2.1.0" PrivateAssets="all"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Builds the analyzer before this project and applies it to this project's own code. -->
+        <ProjectReference Include="..\AsyncLock.Analyzers\AsyncLock.Analyzers.csproj"
+                          ReferenceOutputAssembly="false" OutputItemType="Analyzer"/>
+
+        <!-- Ships the analyzer inside this package so consumers get it automatically. -->
+        <None Include="..\AsyncLock.Analyzers\bin\$(Configuration)\netstandard2.0\AsyncLock.Analyzers.dll"
+              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+    </ItemGroup>
 
 </Project>

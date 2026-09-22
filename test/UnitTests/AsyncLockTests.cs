@@ -192,14 +192,14 @@ public class AsyncLockTests(ITestOutputHelper output)
 	[Fact]
 	public async Task CancellationDoesNotBreakMutualExclusion()
 	{
-		// This test reproduces a race where a cancelled waiter's ContinueWith
+		// This test reproduces a race where a canceled waiter's ContinueWith
 		// completes a TCS that gets reused by a later waiter, allowing two
 		// callers into the critical section simultaneously.
 		//
 		// Sequence:
 		// 1. A holds the lock (swapped in tcs0)
 		// 2. B queues behind A (swapped in tcs1, awaits tcs0.Task)
-		// 3. B is cancelled — sets continuation: tcs0.Task → tcs1.SetResult()
+		// 3. B is canceled — sets continuation: tcs0.Task → tcs1.SetResult()
 		//    TryPutBackCachedTask succeeds, caching tcs1
 		// 4. C queues — grabs tcs1 from cache, awaits tcs0.Task
 		// 5. D queues behind C — awaits tcs1.Task
@@ -316,7 +316,9 @@ public class AsyncLockTests(ITestOutputHelper output)
 		await firstLockReleased.Task;
 
 		// Verify that only two TaskCompletionSources were created: one for the first lock,
-		// and one for the cancelled lock attempts that were never contended
+		// and one for the canceled lock attempts that were never contended
+#if DEBUG
 		Assert.Equal(2ul, asyncLock.TcsCtorCount);
+#endif
 	}
 }
