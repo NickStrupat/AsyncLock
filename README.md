@@ -41,5 +41,4 @@ Monitor.Enter(gate); // NSAL0002
 
 ### Coverage
 
-A type is recognised as an async lock when it implements `IAsyncLock`, which includes your own
-implementations.
+The rules apply to `AsyncLock`.

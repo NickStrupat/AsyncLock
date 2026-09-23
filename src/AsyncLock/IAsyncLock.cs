@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace NickStrupat;
 
-public interface IAsyncLock
+internal interface IAsyncLock
 {
 	ValueTask LockAsync(Func<ValueTask> whenLocked, CancellationToken cancellationToken = default);
 }

@@ -20,6 +20,9 @@ namespace NickStrupat.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class MonitorOnAsyncLockAnalyzer : DiagnosticAnalyzer
 {
+	/// <summary>The library's public lock type, the only type the analyzer treats as an async lock.</summary>
+	private const String AsyncLockMetadataName = "NickStrupat.AsyncLock";
+
 	/// <summary>
 	/// The <c>Monitor</c> members that synchronise on their first argument. <c>IsEntered</c> is
 	/// deliberately excluded; it is a query, and is legitimate in assertions and debug checks.
@@ -46,33 +49,35 @@ public sealed class MonitorOnAsyncLockAnalyzer : DiagnosticAnalyzer
 		context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
 		context.RegisterCompilationStartAction(static compilationStartContext =>
 		{
-			// Nothing can be reported in a compilation that does not reference any async lock type.
-			if (AsyncLockTypes.Create(compilationStartContext.Compilation) is not { } types)
+			var compilation = compilationStartContext.Compilation;
+
+			// Nothing can be reported in a compilation that does not reference AsyncLock.
+			if (compilation.GetTypeByMetadataName(AsyncLockMetadataName) is not { } asyncLock)
 				return;
 
-			compilationStartContext.RegisterOperationAction(c => AnalyzeLockStatement(c, types), OperationKind.Lock);
-			if (types.Monitor is not null)
-				compilationStartContext.RegisterOperationAction(c => AnalyzeInvocation(c, types), OperationKind.Invocation);
+			compilationStartContext.RegisterOperationAction(c => AnalyzeLockStatement(c, asyncLock), OperationKind.Lock);
+			if (compilation.GetTypeByMetadataName("System.Threading.Monitor") is { } monitor)
+				compilationStartContext.RegisterOperationAction(c => AnalyzeInvocation(c, asyncLock, monitor), OperationKind.Invocation);
 		});
 	}
 
-	private static void AnalyzeLockStatement(OperationAnalysisContext context, AsyncLockTypes types)
+	private static void AnalyzeLockStatement(OperationAnalysisContext context, INamedTypeSymbol asyncLock)
 	{
 		var lockedValue = Unwrap(((ILockOperation)context.Operation).LockedValue);
-		if (!types.Includes(lockedValue.Type))
+		if (!IsAsyncLock(lockedValue.Type, asyncLock))
 			return;
 
 		context.ReportDiagnostic(Diagnostic.Create(
 			Rules.LockStatement, lockedValue.Syntax.GetLocation(), Describe(lockedValue.Type)));
 	}
 
-	private static void AnalyzeInvocation(OperationAnalysisContext context, AsyncLockTypes types)
+	private static void AnalyzeInvocation(OperationAnalysisContext context, INamedTypeSymbol asyncLock, INamedTypeSymbol monitor)
 	{
 		var invocation = (IInvocationOperation)context.Operation;
 		var method = invocation.TargetMethod;
 		if (!MonitorMethodNames.Contains(method.Name))
 			return;
-		if (!SymbolEqualityComparer.Default.Equals(method.ContainingType, types.Monitor))
+		if (!SymbolEqualityComparer.Default.Equals(method.ContainingType, monitor))
 			return;
 
 		// Every Monitor method above takes the object it synchronises on as its first parameter.
@@ -80,12 +85,16 @@ public sealed class MonitorOnAsyncLockAnalyzer : DiagnosticAnalyzer
 			return;
 
 		var synchronisedOn = Unwrap(argument.Value);
-		if (!types.Includes(synchronisedOn.Type))
+		if (!IsAsyncLock(synchronisedOn.Type, asyncLock))
 			return;
 
 		context.ReportDiagnostic(Diagnostic.Create(
 			Rules.MonitorMethod, synchronisedOn.Syntax.GetLocation(), Describe(synchronisedOn.Type), method.Name));
 	}
+
+	/// <summary>AsyncLock is sealed, so nothing derives from it and an exact match suffices.</summary>
+	private static Boolean IsAsyncLock(ITypeSymbol? type, INamedTypeSymbol asyncLock) =>
+		SymbolEqualityComparer.Default.Equals(type, asyncLock);
 
 	private static IArgumentOperation? FindArgument(IInvocationOperation invocation, Int32 ordinal)
 	{

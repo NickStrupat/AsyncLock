@@ -18,6 +18,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- IAsyncLock is internal; these implement it, or test and benchmark through it. -->
+        <InternalsVisibleTo Include="Candidates"/>
+        <InternalsVisibleTo Include="BenchmarkSuite"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- Builds the analyzer before this project and applies it to this project's own code. -->
         <ProjectReference Include="..\AsyncLock.Analyzers\AsyncLock.Analyzers.csproj"
                           ReferenceOutputAssembly="false" OutputItemType="Analyzer"/>

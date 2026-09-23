@@ -25,31 +25,17 @@ public class MonitorOnAsyncLockAnalyzerTests
 		}
 		""", Rules.LockStatementId);
 
-	[Fact]
-	public Task AsyncLock6_WhenLockStatementUsed_IsReported() => VerifyAsync("""
+	/// <summary>Only the public AsyncLock is covered, not other types implementing the internal IAsyncLock.</summary>
+	[Theory]
+	[InlineData("AsyncLock6")]
+	[InlineData("AsyncSemaphoreSlimLock")]
+	public Task OtherIAsyncLockImplementation_WhenLockStatementUsed_IsNotReported(String typeName) => VerifyAsync($$"""
 		class C
 		{
-			private readonly AsyncLock6 gate = new();
-			public void M() { lock ([|gate|]) { } }
+			private readonly {{typeName}} gate = new();
+			public void M() { lock (gate) { } }
 		}
-		""", Rules.LockStatementId);
-
-	[Fact]
-	public Task IAsyncLockInterface_WhenLockStatementUsed_IsReported() => VerifyAsync("""
-		class C
-		{
-			public void M(IAsyncLock gate) { lock ([|gate|]) { } }
-		}
-		""", Rules.LockStatementId);
-
-	[Fact]
-	public Task AsyncSemaphoreSlimLock_WhenLockStatementUsed_IsReported() => VerifyAsync("""
-		class C
-		{
-			private readonly AsyncSemaphoreSlimLock gate = new();
-			public void M() { lock ([|gate|]) { } }
-		}
-		""", Rules.LockStatementId);
+		""");
 
 	/// <summary>A cast to Object hides the type from the reader, but not from the analyzer.</summary>
 	[Fact]

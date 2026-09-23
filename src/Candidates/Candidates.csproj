@@ -14,11 +14,4 @@
         <ProjectReference Include="..\AsyncLock\AsyncLock.csproj" />
     </ItemGroup>
 
-    <ItemGroup>
-        <!-- AsyncLock6 pools its nodes with the same internal pool as AsyncLock. Linking the source gives this
-             assembly its own internal copy, so the shipped package needs no InternalsVisibleTo. -->
-        <Compile Include="..\AsyncLock\ObjectPool.cs" Link="Shared\ObjectPool.cs" />
-        <Compile Include="..\AsyncLock\ConcurrentBoundedQueue.cs" Link="Shared\ConcurrentBoundedQueue.cs" />
-    </ItemGroup>
-
 </Project>
