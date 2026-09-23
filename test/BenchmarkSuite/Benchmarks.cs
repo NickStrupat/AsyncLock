@@ -9,7 +9,8 @@ using NickStrupat;
 namespace BenchmarkSuite
 {
 	[MemoryDiagnoser]
-	[SimpleJob(RunStrategy.ColdStart, launchCount: 1, warmupCount: 5, iterationCount: 10)]
+	// Three launches because contended results vary 10-25% from one process to the next.
+	[SimpleJob(RunStrategy.ColdStart, launchCount: 3, warmupCount: 5, iterationCount: 10)]
 	// [GenericTypeArguments(typeof(AsyncLock))]
 	// [GenericTypeArguments(typeof(SemaphoreSlimAsyncLock))]
 	// Public for BenchmarkDotNet, so it cannot be constrained to the internal IAsyncLock; the cast below
@@ -17,6 +18,11 @@ namespace BenchmarkSuite
 	public class Benchmarks<TAsyncLock>
 		where TAsyncLock : new()
 	{
+		// Sized so every iteration runs for at least 100 ms (BenchmarkDotNet's minimum for a stable measurement);
+		// an uncontended acquisition takes tens of nanoseconds, a contended one about a microsecond.
+		private const Int32 ContendedOperations = 1_000_000;
+		private const Int32 UncontendedOperations = 10_000_000;
+
 		Int32 count = 0;
 		readonly IAsyncLock @lock = (IAsyncLock)new TAsyncLock();
 		private readonly Func<ValueTask> increment;
@@ -32,16 +38,16 @@ namespace BenchmarkSuite
 			parallelForEachBody = (_, _) => @lock.LockAsync(increment, CancellationToken.None);
 		}
 
-		[Benchmark]
+		[Benchmark(OperationsPerInvoke = ContendedOperations)]
 		public async Task FullContention()
 		{
-			await Parallel.ForAsync(0, 1_000_000, parallelForEachBody);
+			await Parallel.ForAsync(0, ContendedOperations, parallelForEachBody);
 		}
 
-		[Benchmark]
+		[Benchmark(OperationsPerInvoke = UncontendedOperations)]
 		public async Task NoContention()
 		{
-			for (var i = 0; i < 1_000_000; ++i)
+			for (var i = 0; i < UncontendedOperations; ++i)
 				await @lock.LockAsync(increment, CancellationToken.None);
 		}
 	}
