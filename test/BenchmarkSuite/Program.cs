@@ -3,13 +3,23 @@ using System.Linq;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Running;
 using BenchmarkSuite;
+using BenchmarkSuite.ThirdParty;
 using NickStrupat;
 
 var config = DefaultConfig.Instance;
 
 Type Selector(Type x) => typeof(Benchmarks<>).MakeGenericType(x);
 
-Type[] asyncLockTypes = Enumerable.Select([typeof(AsyncLock1), typeof(AsyncLock), typeof(AsyncSemaphoreSlimLock)], Selector).ToArray();
+Type[] asyncLockTypes = Enumerable.Select(
+	[
+		typeof(AsyncLock1),
+		typeof(AsyncLock),
+		typeof(AsyncSemaphoreSlimLock),
+		typeof(NitoAsyncLock),
+		typeof(DotNextAsyncExclusiveLock),
+		typeof(VsThreadingAsyncSemaphore),
+	],
+	Selector).ToArray();
 var summary = BenchmarkRunner.Run(asyncLockTypes, config, args);
 
 // Use this to select benchmarks from the console:

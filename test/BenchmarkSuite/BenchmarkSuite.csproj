@@ -11,10 +11,19 @@
         <Optimize>true</Optimize>
         <Configuration>Release</Configuration>
         <IsPackable>false</IsPackable>
+        <!-- Microsoft.VisualStudio.Threading brings its analyzers transitively; benchmark method names are
+             report labels, so they keep BenchmarkDotNet's convention rather than an "Async" suffix. -->
+        <NoWarn>$(NoWarn);VSTHRD200</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" Version="0.15.6" />
         <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.12" Condition="'$(OS)' == 'Windows_NT'"/>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Community async locks compared against ours; adapted to IAsyncLock in ThirdParty/. -->
+        <PackageReference Include="DotNext.Threading" Version="6.8.0" />
+        <PackageReference Include="Microsoft.VisualStudio.Threading" Version="18.7.23" />
+        <PackageReference Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\..\src\AsyncLock\AsyncLock.csproj" />
