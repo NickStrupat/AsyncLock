@@ -31,7 +31,9 @@ namespace NickStrupat;
 
 public sealed class AsyncReaderWriterLock
 {
-	private readonly AsyncSemaphoreSlimLock exclusiveWriterLock = new();
+	// Not scoped to a single call: the first reader acquires it and the last reader, which may be a different
+	// call, releases it.
+	private readonly SemaphoreSlim exclusiveWriterSemaphore = new(1, 1);
 	private readonly AsyncSemaphoreSlimLock sharedReaderLock = new();
 	private UInt64 readerCount;
 
@@ -39,36 +41,39 @@ public sealed class AsyncReaderWriterLock
 	{
 		ArgumentNullException.ThrowIfNull(whenLocked);
 
-		using (await exclusiveWriterLock.LockAsync(cancellationToken).ConfigureAwait(false))
+		await exclusiveWriterSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
 			await whenLocked().ConfigureAwait(false);
+		}
+		finally
+		{
+			exclusiveWriterSemaphore.Release();
+		}
 	}
 
 	public async ValueTask ReadLockAsync(Func<Task> whenLocked, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(whenLocked);
 
-		AsyncSemaphoreSlimLock.Releaser writeLockReleaser = default;
+		await sharedReaderLock.LockAsync(async () =>
+		{
+			if (readerCount++ == 0)
+				await exclusiveWriterSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+		}, cancellationToken).ConfigureAwait(false);
+
 		try
 		{
-			using (await sharedReaderLock.LockAsync(cancellationToken).ConfigureAwait(false))
-			{
-				if (readerCount++ == 0)
-				{
-					writeLockReleaser = await exclusiveWriterLock.LockAsync(cancellationToken).ConfigureAwait(false);
-				}
-			}
-
 			await whenLocked().ConfigureAwait(false);
 		}
 		finally
 		{
-			using (await sharedReaderLock.LockAsync(cancellationToken).ConfigureAwait(false))
+			await sharedReaderLock.LockAsync(() =>
 			{
 				if (readerCount-- == 1)
-				{
-					writeLockReleaser.Dispose();
-				}
-			}
+					exclusiveWriterSemaphore.Release();
+				return ValueTask.CompletedTask;
+			}, cancellationToken).ConfigureAwait(false);
 		}
 	}
 }
@@ -82,8 +87,7 @@ public sealed class SharedAsyncLock
 	{
 		ArgumentNullException.ThrowIfNull(whenLocked);
 
-		using (await @lock.LockAsync(cancellationToken).ConfigureAwait(false))
-			await whenLocked().ConfigureAwait(false);
+		await @lock.LockAsync(async () => await whenLocked().ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 	}
 
 	public async ValueTask SharedLockAsync(Func<Task> whenFirstLocked, Func<Task> whenLastUnlocked, Func<Task> whenLocked, CancellationToken cancellationToken = default)
@@ -91,22 +95,22 @@ public sealed class SharedAsyncLock
 		ArgumentNullException.ThrowIfNull(whenFirstLocked);
 		ArgumentNullException.ThrowIfNull(whenLastUnlocked);
 
-		using (await @lock.LockAsync(cancellationToken).ConfigureAwait(false))
+		await @lock.LockAsync(async () =>
 		{
 			if (sharedCount++ == 0)
 			{
 				await whenFirstLocked();
 			}
-		}
+		}, cancellationToken).ConfigureAwait(false);
 
 		await whenLocked().ConfigureAwait(false);
 
-		using (await @lock.LockAsync(cancellationToken).ConfigureAwait(false))
+		await @lock.LockAsync(async () =>
 		{
 			if (sharedCount-- == 1)
 			{
 				await whenLastUnlocked();
 			}
-		}
+		}, cancellationToken).ConfigureAwait(false);
 	}
 }
