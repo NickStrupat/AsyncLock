@@ -17,7 +17,6 @@ internal sealed class AsyncLockTypes
 	private static readonly String[] InterfaceMetadataNames =
 	[
 		"NickStrupat.IAsyncLock",
-		"NickStrupat.IAsyncLock`1",
 	];
 
 	/// <summary>

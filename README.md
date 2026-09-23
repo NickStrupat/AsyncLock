@@ -41,7 +41,7 @@ Monitor.Enter(gate); // NSAL0002
 
 ### Coverage
 
-A type is recognised as an async lock when it implements `IAsyncLock` or `IAsyncLock<TReleaser>`,
+A type is recognised as an async lock when it implements `IAsyncLock`,
 which includes your own implementations. The library's `AsyncReaderWriterLock` and `SharedAsyncLock`
-implement neither, so they are matched by name; that list lives in
+do not, so they are matched by name; that list lives in
 `src/AsyncLock.Analyzers/AsyncLockTypes.cs` and needs extending when a similar type is added.

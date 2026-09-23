@@ -43,14 +43,6 @@ public class MonitorOnAsyncLockAnalyzerTests
 		""", Rules.LockStatementId);
 
 	[Fact]
-	public Task GenericIAsyncLockImplementation_WhenLockStatementUsed_IsReported() => VerifyAsync("""
-		class C
-		{
-			public void M(IAsyncLock<AsyncSemaphoreSlimLock.Releaser> gate) { lock ([|gate|]) { } }
-		}
-		""", Rules.LockStatementId);
-
-	[Fact]
 	public Task AsyncSemaphoreSlimLock_WhenLockStatementUsed_IsReported() => VerifyAsync("""
 		class C
 		{

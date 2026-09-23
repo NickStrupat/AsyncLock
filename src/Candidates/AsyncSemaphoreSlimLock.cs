@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace NickStrupat;
 
-public sealed class AsyncSemaphoreSlimLock : IAsyncLock<AsyncSemaphoreSlimLock.Releaser>, IAsyncLock
+public sealed class AsyncSemaphoreSlimLock : IAsyncLock
 {
 	private readonly SemaphoreSlim semaphore = new(1, 1);
 
