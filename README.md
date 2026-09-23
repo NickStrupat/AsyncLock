@@ -79,13 +79,30 @@ abort token or a timeout would:
   thread-pool round trip dominates, so the times fall within the measurement error of each other (±0.3–0.7 µs);
   allocation still differs.
 
-Each figure is the mean of 3 processes × 10 iterations, all from one run. Uncontended times are within ±4 ns except
+With waiters cancelled while queued, as when timeouts fire under load. Each round holds the lock, queues 8 waiters,
+cancels every other one, then releases; figures are per waiter:
+
+| Lock | Contended, half the waiters cancelled |
+|---|---:|
+| `AsyncLock` | 5.99 µs · 846 B |
+| `SemaphoreSlim` (`WaitAsync`/`Release`) | 8.78 µs · 1.41 KB |
+| DotNext.Threading `AsyncExclusiveLock` | 4.96 µs · 821 B |
+| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 4.84 µs · 1,000 B |
+| Nito.AsyncEx `AsyncLock` | 5.41 µs · 1.45 KB |
+
+Cancellation dominates this scenario: every cancelled wait throws `OperationCanceledException` (about 200 B per throw,
+usually more than one throw per wait) and registers with a token that cannot reuse its registrations (about 100 B).
+`AsyncLock` is about 20% slower here than DotNext and VS.Threading (±0.4–0.6 µs) and allocates within 3% of DotNext,
+the lowest.
+
+Each figure is the mean of 3 processes × 10 iterations; the token-kind tables come from one run and the cancellation
+table from another. Uncontended times are within ±4 ns except
 where marked; contended times vary by ±4–15%, so contended differences smaller than that are noise. Measured with
 BenchmarkDotNet 0.15.6 on .NET 10.0.12, Apple M1 Max, macOS 27, against DotNext.Threading 6.8.0,
 Microsoft.VisualStudio.Threading 18.7.23 and Nito.AsyncEx.Coordination 5.1.2. Each community lock is called through
 its own acquire-and-release API, the way a caller would use it (`test/BenchmarkSuite/ThirdParty`).
 
-To reproduce (about 50 minutes):
+To reproduce (about 55 minutes):
 
 ```sh
 dotnet run -c Release --project test/BenchmarkSuite
