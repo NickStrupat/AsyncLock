@@ -51,21 +51,6 @@ public class MonitorOnAsyncLockAnalyzerTests
 		}
 		""", Rules.LockStatementId);
 
-	/// <summary>
-	/// AsyncReaderWriterLock and SharedAsyncLock implement no common interface, so they are recognised
-	/// by name. This guards that list against being silently forgotten.
-	/// </summary>
-	[Theory]
-	[InlineData("AsyncReaderWriterLock")]
-	[InlineData("SharedAsyncLock")]
-	public Task StandaloneLockType_WhenLockStatementUsed_IsReported(String typeName) => VerifyAsync($$"""
-		class C
-		{
-			private readonly {{typeName}} gate = new();
-			public void M() { lock ([|gate|]) { } }
-		}
-		""", Rules.LockStatementId);
-
 	/// <summary>A cast to Object hides the type from the reader, but not from the analyzer.</summary>
 	[Fact]
 	public Task AsyncLock_WhenLockedThroughAnObjectCast_IsReported() => VerifyAsync("""

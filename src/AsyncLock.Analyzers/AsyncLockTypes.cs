@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace NickStrupat.Analyzers;
@@ -11,37 +10,19 @@ namespace NickStrupat.Analyzers;
 internal sealed class AsyncLockTypes
 {
 	/// <summary>
-	/// Implementing one of these marks a type as an async lock. This is how user-defined
-	/// implementations are recognised as well as the ones in this library.
+	/// Implementing this marks a type as an async lock. This is how user-defined implementations are
+	/// recognised as well as the one in this library.
 	/// </summary>
-	private static readonly String[] InterfaceMetadataNames =
-	[
-		"NickStrupat.IAsyncLock",
-	];
+	private const String InterfaceMetadataName = "NickStrupat.IAsyncLock";
 
-	/// <summary>
-	/// Async lock types that do not implement one of the interfaces above. Extend this list when a
-	/// new such type is added to the library.
-	/// </summary>
-	private static readonly String[] StandaloneMetadataNames =
-	[
-		"NickStrupat.AsyncReaderWriterLock",
-		"NickStrupat.SharedAsyncLock",
-	];
-
-	private readonly ImmutableArray<INamedTypeSymbol> interfaces;
-	private readonly ImmutableArray<INamedTypeSymbol> standaloneTypes;
+	private readonly INamedTypeSymbol asyncLockInterface;
 
 	/// <summary>The <see cref="System.Threading.Monitor"/> symbol, or <see langword="null"/> if it is unavailable.</summary>
 	public INamedTypeSymbol? Monitor { get; }
 
-	private AsyncLockTypes(
-		ImmutableArray<INamedTypeSymbol> interfaces,
-		ImmutableArray<INamedTypeSymbol> standaloneTypes,
-		INamedTypeSymbol? monitor)
+	private AsyncLockTypes(INamedTypeSymbol asyncLockInterface, INamedTypeSymbol? monitor)
 	{
-		this.interfaces = interfaces;
-		this.standaloneTypes = standaloneTypes;
+		this.asyncLockInterface = asyncLockInterface;
 		Monitor = monitor;
 	}
 
@@ -51,21 +32,10 @@ internal sealed class AsyncLockTypes
 	/// </summary>
 	public static AsyncLockTypes? Create(Compilation compilation)
 	{
-		var interfaces = Resolve(compilation, InterfaceMetadataNames);
-		var standaloneTypes = Resolve(compilation, StandaloneMetadataNames);
-		if (interfaces.IsEmpty && standaloneTypes.IsEmpty)
+		if (compilation.GetTypeByMetadataName(InterfaceMetadataName) is not { } asyncLockInterface)
 			return null;
 
-		return new AsyncLockTypes(interfaces, standaloneTypes, compilation.GetTypeByMetadataName("System.Threading.Monitor"));
-	}
-
-	private static ImmutableArray<INamedTypeSymbol> Resolve(Compilation compilation, String[] metadataNames)
-	{
-		var builder = ImmutableArray.CreateBuilder<INamedTypeSymbol>(metadataNames.Length);
-		foreach (var metadataName in metadataNames)
-			if (compilation.GetTypeByMetadataName(metadataName) is { } type)
-				builder.Add(type);
-		return builder.ToImmutable();
+		return new AsyncLockTypes(asyncLockInterface, compilation.GetTypeByMetadataName("System.Threading.Monitor"));
 	}
 
 	/// <summary>Determines whether <paramref name="type"/> is, or implements, an async lock.</summary>
@@ -75,21 +45,16 @@ internal sealed class AsyncLockTypes
 			return false;
 
 		// The static type may be the interface itself, which does not appear in its own AllInterfaces.
-		if (Matches(type, interfaces) || Matches(type, standaloneTypes))
+		if (Matches(type))
 			return true;
 
 		foreach (var implemented in type.AllInterfaces)
-			if (Matches(implemented, interfaces))
+			if (Matches(implemented))
 				return true;
 
 		return false;
 	}
 
-	private static Boolean Matches(ITypeSymbol type, ImmutableArray<INamedTypeSymbol> candidates)
-	{
-		foreach (var candidate in candidates)
-			if (SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, candidate))
-				return true;
-		return false;
-	}
+	private Boolean Matches(ITypeSymbol type) =>
+		SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, asyncLockInterface);
 }
