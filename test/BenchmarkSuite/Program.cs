@@ -8,19 +8,21 @@ using NickStrupat;
 
 var config = DefaultConfig.Instance;
 
-Type Selector(Type x) => typeof(Benchmarks<>).MakeGenericType(x);
+Type[] asyncLockTypes =
+[
+	typeof(AsyncLock1),
+	typeof(AsyncLock),
+	typeof(AsyncSemaphoreSlimLock),
+	typeof(NitoAsyncLock),
+	typeof(DotNextAsyncExclusiveLock),
+	typeof(VsThreadingAsyncSemaphore),
+];
+Type[] benchmarkTypes = [typeof(Benchmarks<>), typeof(CancellationBenchmarks<>)];
 
-Type[] asyncLockTypes = Enumerable.Select(
-	[
-		typeof(AsyncLock1),
-		typeof(AsyncLock),
-		typeof(AsyncSemaphoreSlimLock),
-		typeof(NitoAsyncLock),
-		typeof(DotNextAsyncExclusiveLock),
-		typeof(VsThreadingAsyncSemaphore),
-	],
-	Selector).ToArray();
-var summary = BenchmarkRunner.Run(asyncLockTypes, config, args);
+var benchmarks = benchmarkTypes
+	.SelectMany(benchmark => asyncLockTypes.Select(asyncLock => benchmark.MakeGenericType(asyncLock)))
+	.ToArray();
+var summary = BenchmarkRunner.Run(benchmarks, config, args);
 
 // Use this to select benchmarks from the console:
 // var summaries = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);
