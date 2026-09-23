@@ -7,6 +7,8 @@ namespace UnitTests;
 
 public class AsyncLock1Tests(ITestOutputHelper output)
 {
+	readonly ITestOutputHelper output = output; // only used in DEBUG builds
+
 	[Fact]
 	public async Task ProvideMutualExclusion()
 	{
