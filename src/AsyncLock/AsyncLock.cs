@@ -136,8 +136,10 @@ public sealed class AsyncLock : IAsyncLock
 		}
 		finally
 		{
-			// Disarm first: everything below can recycle next.
-			await ctr.DisposeAsync().ConfigureAwait(false);
+			// Disarm first: everything below can recycle next. Dispose, not DisposeAsync: it waits the same way for
+			// a callback already running (OnCancel, which is brief), and an await in this finally would make the
+			// compiler catch and rethrow a cancelled wait's exception, a second throw per cancellation.
+			ctr.Dispose();
 
 			if (granted)
 				ReleaseQueued(next);
