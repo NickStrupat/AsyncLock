@@ -84,16 +84,15 @@ cancels every other one, then releases; figures are per waiter:
 
 | Lock | Contended, half the waiters cancelled |
 |---|---:|
-| `AsyncLock` | 5.99 µs · 846 B |
-| `SemaphoreSlim` (`WaitAsync`/`Release`) | 8.78 µs · 1.41 KB |
-| DotNext.Threading `AsyncExclusiveLock` | 4.96 µs · 821 B |
-| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 4.84 µs · 1,000 B |
-| Nito.AsyncEx `AsyncLock` | 5.41 µs · 1.45 KB |
+| **`AsyncLock`** | 4.82 µs · **708 B** |
+| `SemaphoreSlim` (`WaitAsync`/`Release`) | 8.61 µs · 1.41 KB |
+| DotNext.Threading `AsyncExclusiveLock` | 5.07 µs · 821 B |
+| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 5.07 µs · 1,000 B |
+| Nito.AsyncEx `AsyncLock` | 5.53 µs · 1.45 KB |
 
 Cancellation dominates this scenario: every cancelled wait throws `OperationCanceledException` (about 200 B per throw,
 usually more than one throw per wait) and registers with a token that cannot reuse its registrations (about 100 B).
-`AsyncLock` is about 20% slower here than DotNext and VS.Threading (±0.4–0.6 µs) and allocates within 3% of DotNext,
-the lowest.
+`AsyncLock`, DotNext and VS.Threading are level on time (±0.4–0.6 µs), and `AsyncLock` allocates the least.
 
 Each figure is the mean of 3 processes × 10 iterations; the token-kind tables come from one run and the cancellation
 table from another. Uncontended times are within ±4 ns except
