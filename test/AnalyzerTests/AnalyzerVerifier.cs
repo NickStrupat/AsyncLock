@@ -97,7 +97,7 @@ internal static class AnalyzerVerifier
 		var paths = ((String?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? "")
 			.Split(Path.PathSeparator)
 			.Append(typeof(IAsyncLock).Assembly.Location) // the package
-			.Append(typeof(AsyncLock).Assembly.Location)  // the candidate implementations
+			.Append(typeof(AsyncLock1).Assembly.Location)  // the candidate implementations
 			.Where(x => x.Length != 0)
 			.GroupBy(Path.GetFileNameWithoutExtension)
 			.Select(x => x.First());

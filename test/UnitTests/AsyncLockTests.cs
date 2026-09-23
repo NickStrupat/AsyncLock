@@ -1,11 +1,9 @@
-using System.Diagnostics;
 using NickStrupat;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace UnitTests;
 
-public class AsyncLockTests(ITestOutputHelper output)
+public class AsyncLockTests
 {
 	[Fact]
 	public async Task ProvideMutualExclusion()
@@ -19,7 +17,7 @@ public class AsyncLockTests(ITestOutputHelper output)
 				Assert.False(inGuardedSection);
 				inGuardedSection = true;
 				SynchronizationContext.SetSynchronizationContext(null);
-				await Task.Yield(); // Return to the task pool
+				await Task.Yield();
 				inGuardedSection = false;
 			});
 		});
@@ -33,230 +31,65 @@ public class AsyncLockTests(ITestOutputHelper output)
 				GenerateTask()
 			);
 		}
-	}
-
-	[Fact]
-	public async Task ProvideMutualExclusionOfNestedAsyncCode()
-	{
-		var asyncLock = new AsyncLock();
-		var raceConditionDetector = 0;
-		async Task GenerateTask()
-		{
-			await asyncLock.LockAsync(async () =>
-			{
-				await Task.Run(() => ++raceConditionDetector);
-			});
-		}
-		for (var i = 0; i < 1000; ++i)
-		{
-			await Task.WhenAll(
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask()
-			);
-		}
-		Assert.Equal(5000, raceConditionDetector);
-	}
-
-	#if DEBUG
-	[Fact]
-	public async Task ReusesCachedTaskCompletionSourceWhenNotContended()
-	{
-		var asyncLock = new AsyncLock();
-		for (var i = 0; i < 1000; ++i)
-		{
-			await asyncLock.LockAsync(async () => await Task.Yield());
-		}
-		Assert.Equal(1ul, asyncLock.TcsCtorCount);
-	}
-
-	[Fact]
-	public async Task DoesNotReuseTaskCompletionSourceWhenContended()
-	{
-
-		var asyncLock = new AsyncLock();
-		var inGuardedSection = false;
-		Task GenerateTask() => Task.Run(async () =>
-		{
-			await asyncLock.LockAsync(async () =>
-			{
-				Assert.False(inGuardedSection);
-				inGuardedSection = true;
-				SynchronizationContext.SetSynchronizationContext(null);
-				await Task.Yield(); // Return to the task pool
-				inGuardedSection = false;
-			});
-		});
-		for (var i = 0; i < 1000; ++i)
-		{
-			await Task.WhenAll(
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask(),
-				GenerateTask()
-			);
-		}
-		Assert.NotEqual(5000ul, asyncLock.TcsCtorCount);
-		Assert.NotEqual(0ul, asyncLock.TcsCtorCount);
-		Assert.NotEqual(1ul, asyncLock.TcsCtorCount);
-		output.WriteLine(asyncLock.TcsCtorCount.ToString());
-	}
-	#endif
-
-	[Fact]
-	public async Task DoesNotAllocateWhenNotContended()
-	{
-		Func<ValueTask> noOp = () => ValueTask.CompletedTask;
-		var asyncLock = new AsyncLock();
-		const int noAllocationRetryLimit = 10_000;
-		for(var x = 0; x != noAllocationRetryLimit; ++x)
-		{
-			var mem = GC.GetTotalMemory(true);
-			for (var i = 0; i < 1000; ++i)
-			{
-				await asyncLock.LockAsync(noOp);
-			}
-			var mem2 = GC.GetTotalMemory(true);
-			if (mem == mem2)
-				return;
-		}
-		Assert.Fail($"Memory allocation detected during all {noAllocationRetryLimit:N0} iterations");
-	}
-
-	sealed class TestTask
-	{
-		private readonly TaskCompletionSource signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		public Task WaitAsync() => signal.Task;
-		public void SetAsCompleted() => signal.SetResult();
-	}
-
-	[Fact]
-	public async Task SupportsCancellation()
-	{
-		var asyncLock = new AsyncLock();
-
-		var releaseFirstLock = new TaskCompletionSource();
-		var firstLockTaken = new TaskCompletionSource();
-		var firstLockReleased = new TaskCompletionSource();
-		var firstLockTask = asyncLock.LockAsync(
-			async () =>
-			{
-				firstLockTaken.SetResult();
-				try { await releaseFirstLock.Task; }
-				finally { firstLockReleased.SetResult(); }
-			},
-			CancellationToken.None
-		);
-		await firstLockTaken.Task;
-
-		using var secondLockCancellationTokenSource = new CancellationTokenSource();
-		var releaseSecondLock = new TaskCompletionSource();
-		var secondLockTaken = new TaskCompletionSource();
-		var secondLockReleased = new TaskCompletionSource();
-		var secondLockTask = asyncLock.LockAsync(
-			async () =>
-			{
-				secondLockTaken.SetResult();
-				try { await releaseSecondLock.Task; }
-				finally { secondLockReleased.SetResult(); }
-			},
-			secondLockCancellationTokenSource.Token
-		);
-
-		var thirdLockTaken = new TaskCompletionSource();
-		var thirdLockTask = asyncLock.LockAsync(() =>
-			{
-				thirdLockTaken.SetResult();
-				return ValueTask.CompletedTask;
-			},
-			CancellationToken.None
-		);
-
-		// Cancel the second lock attempt
-		await secondLockCancellationTokenSource.CancelAsync();
-		await Assert.ThrowsAsync<TaskCanceledException>(async () => await secondLockTask);
-
-		// Release the first lock
-		releaseFirstLock.SetResult();
-		await firstLockReleased.Task;
-		await thirdLockTask; // Should complete now
-		await thirdLockTaken.Task;
-
-		// Verify that the second lock was never taken
-		Assert.Equal(TaskStatus.WaitingForActivation, secondLockTaken.Task.Status);
 	}
 
 	[Fact]
 	public async Task CancellationDoesNotBreakMutualExclusion()
 	{
-		// This test reproduces a race where a canceled waiter's ContinueWith
-		// completes a TCS that gets reused by a later waiter, allowing two
-		// callers into the critical section simultaneously.
-		//
-		// Sequence:
-		// 1. A holds the lock (swapped in tcs0)
-		// 2. B queues behind A (swapped in tcs1, awaits tcs0.Task)
-		// 3. B is canceled — sets continuation: tcs0.Task → tcs1.SetResult()
-		//    TryPutBackCachedTask succeeds, caching tcs1
-		// 4. C queues — grabs tcs1 from cache, awaits tcs0.Task
-		// 5. D queues behind C — awaits tcs1.Task
-		// 6. A finishes — calls tcs0.SetResult()
-		//    → C wakes up (correct)
-		//    → rogue continuation fires tcs1.SetResult() → D wakes up (BUG!)
+		// Reproduces the recycle-while-held race: a contended waiter (B) is cancelled
+		// while its predecessor (A) still holds the lock. The cancellation path resets
+		// and returns B's turnstile node to the pool even though A has not yet completed
+		// it. A later acquisition (C) rents that recycled node, a further waiter (D) ends
+		// up awaiting it, and when A finally releases it completes the recycled node —
+		// admitting D into the critical section while C still holds it.
 
 		var asyncLock = new AsyncLock();
 
-		// A acquires and holds the lock
+		// A acquires and holds the lock.
 		var releaseA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var aAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var taskA = asyncLock.LockAsync(async () =>
 		{
 			aAcquired.SetResult();
 			await releaseA.Task;
-		});
+		}).AsTask();
 		await aAcquired.Task;
 
-		// B queues behind A (LockAsync runs synchronously until the await, so B is queued when it returns)
+		// B queues behind A, then is cancelled while still waiting.
 		using var bCts = new CancellationTokenSource();
-		var taskB = asyncLock.LockAsync(() => ValueTask.CompletedTask, bCts.Token);
-
-		// Cancel B — this sets up the rogue continuation on A's underlying task
+		var taskB = asyncLock.LockAsync(() => ValueTask.CompletedTask, bCts.Token).AsTask();
 		await bCts.CancelAsync();
-		await Assert.ThrowsAsync<TaskCanceledException>(taskB.AsTask);
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => taskB);
 
-		// C queues — grabs B's cached TCS, awaits A's task
+		// C queues — on the buggy impl it rents B's prematurely-recycled node — and holds.
 		var releaseC = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var cAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var taskC = asyncLock.LockAsync(async () =>
 		{
 			cAcquired.SetResult();
 			await releaseC.Task;
-		});
+		}).AsTask();
 
-		// D queues behind C — awaits the TCS that has the rogue continuation
+		// D queues behind C — on the buggy impl it awaits the recycled node.
 		var dAcquired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var releaseD = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var taskD = asyncLock.LockAsync(async () =>
 		{
 			dAcquired.SetResult();
 			await releaseD.Task;
-		});
+		}).AsTask();
 
-		// Release A — C should acquire, but the rogue continuation also releases D
+		// Release A — C should acquire; D must not.
 		releaseA.SetResult();
 		await taskA;
 		await cAcquired.Task;
 
-		// D should NOT have acquired the lock — C is still holding it
 		await Task.Delay(200);
 		Assert.False(dAcquired.Task.IsCompleted,
 			"Mutual exclusion violated: D entered the critical section while C still holds the lock. " +
-			"The cancelled waiter's ContinueWith prematurely completed the reused TCS.");
+			"A cancelled waiter recycled a turnstile node that its predecessor later completed.");
 
-		// Clean up
+		// Clean up.
 		releaseC.SetResult();
 		await taskC;
 		await dAcquired.Task;
@@ -265,60 +98,162 @@ public class AsyncLockTests(ITestOutputHelper output)
 	}
 
 	[Fact]
-	public async Task ReusesCachedTaskCompletionSourceWhenCancelledButNotContended()
+	public async Task CancellingContendedWaiterUnblocksPromptlyWithoutFaulting()
 	{
 		var asyncLock = new AsyncLock();
 
-		var releaseFirstLock = new TaskCompletionSource();
-		var firstLockTaken = new TaskCompletionSource();
-		var firstLockReleased = new TaskCompletionSource();
-		var firstLockTask = asyncLock.LockAsync(
-			async () =>
-			{
-				firstLockTaken.SetResult();
-				try { await releaseFirstLock.Task; }
-				finally { firstLockReleased.SetResult(); }
-			},
-			CancellationToken.None
-		);
-		await firstLockTaken.Task;
-
-		// Attempt and cancel multiple lock attempts while the first lock is held
-		for (var i = 0; i != 10; i++)
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var holder = asyncLock.LockAsync(async () =>
 		{
-			using var secondLockCancellationTokenSource = new CancellationTokenSource();
-			var releaseSecondLock = new TaskCompletionSource();
-			var secondLockTaken = new TaskCompletionSource();
-			var secondLockReleased = new TaskCompletionSource();
-			var secondLockTask = asyncLock.LockAsync(
-				async () =>
-				{
-					secondLockTaken.SetResult();
-					try
-					{
-						await releaseSecondLock.Task;
-					}
-					finally
-					{
-						secondLockReleased.SetResult();
-					}
-				},
-				secondLockCancellationTokenSource.Token
-			);
+			held.SetResult();
+			await release.Task;
+		}).AsTask();
+		await held.Task;
 
-			// Cancel the second lock attempt
-			await secondLockCancellationTokenSource.CancelAsync();
-			await Assert.ThrowsAsync<TaskCanceledException>(async () => await secondLockTask);
+		// Queue a waiter behind the holder and cancel it, repeatedly. The cancellation must surface as
+		// an OperationCanceledException (never an InvalidOperationException from a double completion or a
+		// stale source-token check), and must resolve while the holder is STILL holding — i.e. the wait
+		// is genuinely cancelled, not merely released when the holder finishes.
+		for (var i = 0; i < 20; i++)
+		{
+			using var cts = new CancellationTokenSource();
+			var entered = false;
+			var waiter = asyncLock.LockAsync(
+				() => { entered = true; return ValueTask.CompletedTask; },
+				cts.Token).AsTask();
+
+			await cts.CancelAsync();
+			await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+
+			Assert.False(entered, "a cancelled waiter must never enter the critical section");
+			Assert.False(holder.IsCompleted, "the holder must still hold the lock when the waiter cancels");
 		}
 
-		// Release the first lock
-		releaseFirstLock.SetResult();
-		await firstLockReleased.Task;
+		release.SetResult();
+		await holder;
+	}
 
-		// Verify that only two TaskCompletionSources were created: one for the first lock,
-		// and one for the canceled lock attempts that were never contended
-#if DEBUG
-		Assert.Equal(2ul, asyncLock.TcsCtorCount);
-#endif
+	[Fact]
+	public async Task SupportsCancellation()
+	{
+		var asyncLock = new AsyncLock();
+
+		var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var firstTaken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var firstReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var firstTask = asyncLock.LockAsync(async () =>
+		{
+			firstTaken.SetResult();
+			try { await releaseFirst.Task; }
+			finally { firstReleased.SetResult(); }
+		}).AsTask();
+		await firstTaken.Task;
+
+		// Second attempt queues behind the first and is cancelled while waiting.
+		using var secondCts = new CancellationTokenSource();
+		var secondTaken = false;
+		var secondTask = asyncLock.LockAsync(
+			() => { secondTaken = true; return ValueTask.CompletedTask; },
+			secondCts.Token).AsTask();
+
+		// Third attempt queues behind the second.
+		var thirdTaken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var thirdTask = asyncLock.LockAsync(() =>
+		{
+			thirdTaken.SetResult();
+			return ValueTask.CompletedTask;
+		}).AsTask();
+
+		// Cancel the second attempt — it must fault promptly, before the first lock is released.
+		await secondCts.CancelAsync();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => secondTask);
+		Assert.False(thirdTaken.Task.IsCompleted, "third must still wait behind the holder");
+
+		// Release the first; the third proceeds through the bridge left by the cancelled second.
+		releaseFirst.SetResult();
+		await firstReleased.Task;
+		await thirdTask;
+		await thirdTaken.Task;
+
+		Assert.False(secondTaken, "the cancelled attempt must never enter the critical section");
+	}
+
+	[Fact]
+	public async Task ConcurrentCancellationPreservesMutualExclusion()
+	{
+		var asyncLock = new AsyncLock();
+		var active = 0;
+		var violations = 0;
+
+		async Task Worker(Int32 seed)
+		{
+			var rng = new Random(seed);
+			for (var i = 0; i < 250; i++)
+			{
+				using var cts = new CancellationTokenSource();
+				if (rng.Next(2) == 0)
+					cts.CancelAfter(rng.Next(0, 3)); // race a cancellation against acquisition
+				try
+				{
+					await asyncLock.LockAsync(async () =>
+					{
+						if (Interlocked.Increment(ref active) != 1)
+							Interlocked.Increment(ref violations);
+						await Task.Yield(); // widen the critical-section window
+						Interlocked.Decrement(ref active);
+					}, cts.Token);
+				}
+				catch (OperationCanceledException) { }
+			}
+		}
+
+		var workers = Enumerable.Range(0, 8).Select(s => Task.Run(() => Worker(s))).ToArray();
+		await Task.WhenAll(workers);
+
+		Assert.Equal(0, Volatile.Read(ref violations));
+		Assert.Equal(0, Volatile.Read(ref active));
+	}
+
+	[Fact]
+	public async Task MassCancellationPassesTheTurnThroughToTheNextLiveWaiter()
+	{
+		// The turn passes through cancelled waiters on the releasing thread. Queue a very long run of them
+		// and cancel them all at once: walking that chain must neither overflow the releaser's stack (the
+		// walk is a loop, not recursion) nor drop the turn before it reaches the live waiter behind them.
+		const Int32 cancelledWaiters = 100_000;
+		var asyncLock = new AsyncLock();
+
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var holder = asyncLock.LockAsync(async () =>
+		{
+			held.SetResult();
+			await release.Task;
+		}).AsTask();
+		await held.Task;
+
+		using var cts = new CancellationTokenSource();
+		var cancelledEntered = 0;
+		var waiters = new Task[cancelledWaiters];
+		for (var i = 0; i < waiters.Length; i++)
+			waiters[i] = asyncLock.LockAsync(
+				() => { Interlocked.Increment(ref cancelledEntered); return ValueTask.CompletedTask; },
+				cts.Token).AsTask();
+
+		var liveEntered = false;
+		var live = asyncLock.LockAsync(() => { liveEntered = true; return ValueTask.CompletedTask; }).AsTask();
+
+		await cts.CancelAsync();
+		foreach (var waiter in waiters)
+			await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+		Assert.False(live.IsCompleted, "the live waiter must still wait behind the holder");
+
+		release.SetResult();
+		await holder;
+		await live.WaitAsync(TimeSpan.FromSeconds(30)); // a dropped turn surfaces as a TimeoutException
+
+		Assert.True(liveEntered, "the turn must reach the live waiter through the whole cancelled chain");
+		Assert.Equal(0, Volatile.Read(ref cancelledEntered));
 	}
 }

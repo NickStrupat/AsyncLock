@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace NickStrupat;
 
 /// A simple, thread-safe, FIFO async lock. It does not allocate if uncontended. It does not support recursion/reentrancy.
-public sealed class AsyncLock : IAsyncLock
+public sealed class AsyncLock1 : IAsyncLock
 {
 	// The task that represents the holding of the lock. It is initialized to a completed task to signify that the lock is free.
 	private Task task = Task.CompletedTask;
@@ -13,7 +13,7 @@ public sealed class AsyncLock : IAsyncLock
 	// A cached TCS that is used to avoid allocations when the lock is uncontended.
 	private TaskCompletionSource? cachedTcs;
 
-	public AsyncLock() => cachedTcs = CreateTcs();
+	public AsyncLock1() => cachedTcs = CreateTcs();
 
 	/// <summary>
 	/// Asynchronously waits for the lock to be acquired.

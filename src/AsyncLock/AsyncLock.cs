@@ -15,7 +15,7 @@ namespace NickStrupat;
 /// the queue drains. Cancelled waiters stay in the queue and pass the turn on when it reaches them, so a
 /// cancellation never admits anyone early or strands anyone behind it.
 /// </remarks>
-public sealed class AsyncLock7 : IAsyncLock
+public sealed class AsyncLock : IAsyncLock
 {
 	private const Int32 MaxRetainedInPool = 32;
 
@@ -31,12 +31,12 @@ public sealed class AsyncLock7 : IAsyncLock
 	private static readonly Node Held = new(null);
 	private static readonly Node Released = new(null);
 
-	private readonly ObjectPool<Node, AsyncLock7> nodePool;
+	private readonly ObjectPool<Node, AsyncLock> nodePool;
 	private Node? tail;
 	private Node? handoff;
 
 	/// <summary>Creates an unlocked lock.</summary>
-	public AsyncLock7() => nodePool = new(MaxRetainedInPool, static self => new Node(self), this);
+	public AsyncLock() => nodePool = new(MaxRetainedInPool, static self => new Node(self), this);
 
 	/// <summary>
 	/// Asynchronously waits for the lock to be acquired.
@@ -183,7 +183,7 @@ public sealed class AsyncLock7 : IAsyncLock
 	/// cancellable path allocation-free: the latch is pooled along with the node.
 	/// </para>
 	/// </summary>
-	private sealed class Node(AsyncLock7? owner) : IValueTaskSource, IValueTaskSource<Boolean>
+	private sealed class Node(AsyncLock? owner) : IValueTaskSource, IValueTaskSource<Boolean>
 	{
 		private const Int32 Waiting = 0, Granted = 1, Cancelled = 2;
 
