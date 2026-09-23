@@ -28,6 +28,8 @@ namespace BenchmarkSuite
 
 		Int32 count = 0;
 		readonly IAsyncLock @lock = (IAsyncLock)new TAsyncLock();
+		private readonly CancellationTokenSource cancellationTokenSource = new();
+		private CancellationToken cancellationToken;
 		private readonly Func<ValueTask> increment;
 		private readonly Func<Int32, CancellationToken, ValueTask> parallelForEachBody;
 		private readonly Func<ValueTask> incrementAndYield;
@@ -40,10 +42,21 @@ namespace BenchmarkSuite
 				++count;
 				return ValueTask.CompletedTask;
 			};
-			parallelForEachBody = (_, _) => @lock.LockAsync(increment, CancellationToken.None);
+			parallelForEachBody = (_, _) => @lock.LockAsync(increment, cancellationToken);
 			incrementAndYield = IncrementAndYieldAsync;
-			parallelForEachBodyWithAwait = (_, _) => @lock.LockAsync(incrementAndYield, CancellationToken.None);
+			parallelForEachBodyWithAwait = (_, _) => @lock.LockAsync(incrementAndYield, cancellationToken);
 		}
+
+		/// <summary>The token every acquisition passes; a cancellable one takes the locks' registering wait path.</summary>
+		[Params(CancellationTokenKind.None, CancellationTokenKind.Cancellable)]
+		public CancellationTokenKind Token { get; set; }
+
+		[GlobalSetup]
+		public void Setup() =>
+			cancellationToken = Token == CancellationTokenKind.Cancellable ? cancellationTokenSource.Token : CancellationToken.None;
+
+		[GlobalCleanup]
+		public void Cleanup() => cancellationTokenSource.Dispose();
 
 		// Suspends while the lock is held, so the lock's release path runs after an asynchronous completion. Pooled so
 		// the suspension itself allocates nothing and the reported allocation is the lock's own.
@@ -70,7 +83,7 @@ namespace BenchmarkSuite
 		public async Task NoContention()
 		{
 			for (var i = 0; i < UncontendedOperations; ++i)
-				await @lock.LockAsync(increment, CancellationToken.None);
+				await @lock.LockAsync(increment, cancellationToken);
 		}
 	}
 }
