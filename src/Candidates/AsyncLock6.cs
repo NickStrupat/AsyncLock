@@ -76,8 +76,10 @@ public sealed class AsyncLock6 : IAsyncLock
 		{
 			// Disarm first. Finish can put next straight back in the pool, and a callback still armed
 			// on a re-rented node would complete a different caller's latch — handing it a lock it was
-			// never granted.
-			await ctr.DisposeAsync().ConfigureAwait(false);
+			// never granted. Dispose, not DisposeAsync: it waits the same way for a callback already
+			// running (OnCancel, which is brief), and an await in this finally would make the compiler
+			// catch and rethrow a cancelled wait's exception, a second throw per cancellation.
+			ctr.Dispose();
 
 			// Hand the lock on only if we actually acquired it. If we cancelled, prev has not completed
 			// yet, so the turn is not ours to give; the bridge (Node.OnPrevCompleted) completes next
