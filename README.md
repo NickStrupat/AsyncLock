@@ -51,32 +51,35 @@ With `CancellationToken.None`:
 
 | Lock | Uncontended | Contended | Contended, awaiting inside |
 |---|---:|---:|---:|
-| **`AsyncLock`** | **14.5 ns** · 0 B | 957 ns · **5 B** | 2.11 µs · **16 B** |
-| `SemaphoreSlim` (`WaitAsync`/`Release`) | 31.2 ns · 0 B | 1,020 ns · 232 B | 1.93 µs · 242 B |
-| DotNext.Threading `AsyncExclusiveLock` | 32.3 ns · 0 B | 1,251 ns · 128 B | 2.30 µs · 137 B |
-| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 33.1 ns · 0 B | 1,288 ns · 320 B | 2.12 µs · 329 B |
-| Nito.AsyncEx `AsyncLock` | 77.8 ns · 320 B | 1,232 ns · 560 B | 2.30 µs · 570 B |
+| **`AsyncLock`** | **14.5 ns** · 0 B | 1,049 ns · **5 B** | 2.40 µs · **17 B** |
+| `SemaphoreSlim` (`WaitAsync`/`Release`) | 31.3 ns · 0 B | 1,147 ns · 232 B | 2.16 µs · 244 B |
+| DotNext.Threading `AsyncExclusiveLock` | 33.7 ns · 0 B | 1,354 ns · 128 B | 1.11 µs¹ · 128 B |
+| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 33.5 ns · 0 B | 1,366 ns · 320 B | 1.88 µs · 331 B |
+| Nito.AsyncEx `AsyncLock` | 76.9 ns · 320 B | 1,141 ns · 560 B | 1.94 µs · 570 B |
 
 With a cancellable token (from a `CancellationTokenSource` that is never cancelled), as a caller passing a request's
 abort token or a timeout would:
 
 | Lock | Uncontended | Contended | Contended, awaiting inside |
 |---|---:|---:|---:|
-| **`AsyncLock`** | **14.6 ns** · 0 B | 1,251 ns · **1 B** | 1.91 µs · **8 B** |
-| `SemaphoreSlim` (`WaitAsync`/`Release`) | 31.3 ns · 0 B | 1,644 ns · 520 B | 2.42 µs · 543 B |
-| DotNext.Threading `AsyncExclusiveLock` | 34.0 ns · 0 B | 1,351 ns · 128 B | 2.39 µs · 138 B |
-| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 46.7 ns¹ · 0 B | 1,654 ns · 320 B | 3.04 µs · 333 B |
-| Nito.AsyncEx `AsyncLock` | 78.9 ns · 320 B | 1,811 ns · 888 B | 2.84 µs · 898 B |
+| **`AsyncLock`** | **14.4 ns** · 0 B | 1,327 ns · **1 B** | 2.30 µs · **14 B** |
+| `SemaphoreSlim` (`WaitAsync`/`Release`) | 31.4 ns · 0 B | 1,617 ns · 519 B | 2.05 µs · 538 B |
+| DotNext.Threading `AsyncExclusiveLock` | 34.2 ns · 0 B | 1,455 ns · 128 B | 2.68 µs · 138 B |
+| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 35.0 ns · 0 B | 1,491 ns · 320 B | 2.63 µs · 334 B |
+| Nito.AsyncEx `AsyncLock` | 73.3 ns · 320 B | 1,769 ns · 888 B | 2.83 µs · 899 B |
 
-¹ A noisy measurement (±18 ns; median 34.8 ns), in line with the `None` figure.
+¹ Bimodal: in each process, iterations fell from about 3 µs to between 0.35 and 1.1 µs (median 0.73 µs), and a
+re-run did the same (median 0.92 µs). Earlier runs stayed near 2.3 µs throughout, so treat it as unstable rather than
+as a speed.
 
 - **Uncontended**: one caller acquiring and releasing in a loop. A free lock never registers with the token, so the
   token makes no difference here.
 - **Contended**: `Parallel.ForAsync` hammering one lock around an increment that completes synchronously. A
-  cancellable token makes each waiter register with it, which slows most locks by roughly 30–60% (DotNext barely
-  changes) and adds allocation to `SemaphoreSlim` and Nito; `AsyncLock` stays allocation-free.
+  cancellable token makes each waiter register with it, which slows `AsyncLock`, `SemaphoreSlim` and Nito by roughly
+  25–55% and DotNext and VS.Threading by under 10%, and adds allocation to `SemaphoreSlim` and Nito; `AsyncLock`
+  stays allocation-free.
 - **Contended, awaiting inside**: the same, with an `await Task.Yield()` while the lock is held. The yield's
-  thread-pool round trip dominates, so the times fall within the measurement error of each other (±0.3–0.7 µs);
+  thread-pool round trip dominates, so the times fall within the measurement error of each other (±0.3–0.5 µs);
   allocation still differs.
 
 With waiters cancelled while queued, as when timeouts fire under load. Each round holds the lock, queues 8 waiters,
@@ -84,24 +87,25 @@ cancels every other one, then releases; figures are per waiter:
 
 | Lock | Contended, half the waiters cancelled |
 |---|---:|
-| **`AsyncLock`** | 4.82 µs · **708 B** |
-| `SemaphoreSlim` (`WaitAsync`/`Release`) | 8.61 µs · 1.41 KB |
-| DotNext.Threading `AsyncExclusiveLock` | 5.07 µs · 821 B |
-| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 5.07 µs · 1,000 B |
-| Nito.AsyncEx `AsyncLock` | 5.53 µs · 1.45 KB |
+| **`AsyncLock`** | 5.25 µs · **707 B** |
+| `SemaphoreSlim` (`WaitAsync`/`Release`) | 8.25 µs · 1.41 KB |
+| DotNext.Threading `AsyncExclusiveLock` | 4.96 µs · 821 B |
+| Microsoft.VisualStudio.Threading `AsyncSemaphore` | 4.77 µs · 1,000 B |
+| Nito.AsyncEx `AsyncLock` | 5.33 µs · 1.45 KB |
 
 Cancellation dominates this scenario: every cancelled wait throws `OperationCanceledException` (about 200 B per throw,
 usually more than one throw per wait) and registers with a token that cannot reuse its registrations (about 100 B).
-`AsyncLock`, DotNext and VS.Threading are level on time (±0.4–0.6 µs), and `AsyncLock` allocates the least.
+`AsyncLock`, DotNext, VS.Threading and Nito are level on time (±0.4–0.7 µs), `SemaphoreSlim` is about 60% slower,
+and `AsyncLock` allocates the least.
 
-Each figure is the mean of 3 processes × 10 iterations; the token-kind tables come from one run and the cancellation
-table from another. Uncontended times are within ±4 ns except
-where marked; contended times vary by ±4–15%, so contended differences smaller than that are noise. Measured with
-BenchmarkDotNet 0.15.6 on .NET 10.0.12, Apple M1 Max, macOS 27, against DotNext.Threading 6.8.0,
-Microsoft.VisualStudio.Threading 18.7.23 and Nito.AsyncEx.Coordination 5.1.2. Each community lock is called through
-its own acquire-and-release API, the way a caller would use it (`test/BenchmarkSuite/ThirdParty`).
+Each figure is the mean of 3 processes × 10 iterations, all from one run. Uncontended times are within ±3 ns;
+contended times vary by ±2–10%, so contended differences smaller than that are noise. Measured with
+BenchmarkDotNet 0.15.6 on .NET 10.0.12, Apple M1 Max, macOS 27, with an IDE running in the background, against
+DotNext.Threading 6.8.0, Microsoft.VisualStudio.Threading 18.7.23 and Nito.AsyncEx.Coordination 5.1.2. Each
+community lock is called through its own acquire-and-release API, the way a caller would use it
+(`test/BenchmarkSuite/ThirdParty`).
 
-To reproduce (about 55 minutes):
+To reproduce (about 20 minutes):
 
 ```sh
 dotnet run -c Release --project test/BenchmarkSuite
