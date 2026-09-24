@@ -43,6 +43,25 @@ Monitor.Enter(gate); // NSAL0002
 
 The rules apply to `AsyncLock`.
 
+## Why it's fast
+
+- **No internal lock.** `SemaphoreSlim`, DotNext, VS.Threading and Nito each guard their wait queue with an internal
+  lock taken on every acquire and every release. `AsyncLock` takes none: while it is free it is a single field,
+  acquired with one compare-and-swap and released with another, with no queue node at all. That is the main
+  structural difference behind it being about twice as fast uncontended.
+- **Nothing to allocate per wait.** A waiter borrows a node from a small pool, and the node is itself the thing
+  awaited (an `IValueTaskSource` over a `ManualResetValueTaskSourceCore`), reset and reused afterwards, so waiting
+  creates no `Task` or `TaskCompletionSource`. `SemaphoreSlim`, VS.Threading and Nito allocate a task or waiter object
+  for every wait that has to queue, and Nito allocates even when the lock is free.
+- **The wait happens inside the lock.** `LockAsync` takes the critical section as a delegate, so the caller's own
+  method never suspends waiting for the lock; `AsyncLock`'s pooled async method does the waiting. With the
+  `using (await lock.LockAsync())` pattern the other locks use, the caller's async method suspends instead and
+  allocates its state machine, about 110 B. That accounts for all of DotNext's allocation: its own wait nodes are
+  pooled too.
+
+Under contention the difference in speed is small: every one of these locks resumes the next waiter through the
+thread pool, and that hop dominates.
+
 ## Performance
 
 Time and managed allocation per acquisition, compared with `SemaphoreSlim` and popular community async locks.
