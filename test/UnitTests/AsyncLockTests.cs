@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using NickStrupat;
 using Xunit;
 
@@ -258,15 +259,17 @@ public class AsyncLockTests
 	}
 
 	[Theory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public async Task DeepQueueOfSynchronousWaitersDoesNotOverflowTheStack(Boolean cancellable)
+	[InlineData(false, false)]
+	[InlineData(true, false)]
+	[InlineData(false, true)]
+	[InlineData(true, true)]
+	public async Task DeepQueueOfSynchronousWaitersDoesNotOverflowTheStack(Boolean cancellable, Boolean withResult)
 	{
 		// Each waiter's critical section completes synchronously, so it releases the moment it is granted. If a
 		// grant resumed the waiter inline on the releasing thread (a synchronous continuation), every waiter would
 		// run inside its predecessor's release and a long queue would overflow the stack, killing the process.
-		// Granting asynchronously keeps each waiter on its own stack. Run with and without a cancellable token:
-		// the two resume through different signals.
+		// Granting asynchronously keeps each waiter on its own stack. Run with and without a cancellable token (the
+		// two resume through different signals) and through both the plain and the result-returning overloads.
 		const Int32 queuedWaiters = 100_000;
 		var asyncLock = new AsyncLock();
 		using var cts = new CancellationTokenSource();
@@ -287,12 +290,19 @@ public class AsyncLockTests
 		for (var i = 0; i < waiters.Length; i++)
 		{
 			var position = i;
-			waiters[i] = asyncLock.LockAsync(() =>
-			{
-				if (entered++ != position)
-					outOfOrder++;
-				return ValueTask.CompletedTask;
-			}, token).AsTask();
+			waiters[i] = withResult
+				? asyncLock.LockAsync(() =>
+				{
+					if (entered++ != position)
+						outOfOrder++;
+					return new ValueTask<Int32>(position);
+				}, token).AsTask()
+				: asyncLock.LockAsync(() =>
+				{
+					if (entered++ != position)
+						outOfOrder++;
+					return ValueTask.CompletedTask;
+				}, token).AsTask();
 		}
 
 		release.SetResult();
@@ -301,5 +311,114 @@ public class AsyncLockTests
 
 		Assert.Equal(queuedWaiters, entered);
 		Assert.Equal(0, outOfOrder);
+	}
+
+	[Fact]
+	public async Task StateOverloadPassesTheStateToTheCriticalSection()
+	{
+		var asyncLock = new AsyncLock();
+		var counter = new StrongBox<Int32>();
+
+		await asyncLock.LockAsync(counter, static c => { c.Value += 2; return ValueTask.CompletedTask; });
+		var result = await asyncLock.LockAsync(counter, static c => new ValueTask<Int32>(c.Value * 10));
+
+		Assert.Equal(2, counter.Value);
+		Assert.Equal(20, result);
+	}
+
+	[Fact]
+	public async Task ResultOverloadReturnsTheCriticalSectionsResult()
+	{
+		var asyncLock = new AsyncLock();
+
+		var immediate = await asyncLock.LockAsync(() => new ValueTask<String>("done"));
+		var awaited = await asyncLock.LockAsync(async () =>
+		{
+			await Task.Yield();
+			return 42;
+		});
+
+		Assert.Equal("done", immediate);
+		Assert.Equal(42, awaited);
+	}
+
+	[ReleaseOnlyFact]
+	public void StateAndResultOverloadsDoNotAllocateWhenUncontended()
+	{
+		// With a static lambda and the state passed explicitly there is no closure, and a free lock takes the lock
+		// word without a queue node, so an uncontended acquisition allocates nothing. Everything here completes
+		// synchronously on this thread, which is what makes the per-thread allocation counter exact.
+		var asyncLock = new AsyncLock();
+		var counter = new StrongBox<Int32>();
+		const Int32 acquisitions = 1_000;
+
+		for (var i = 0; i < acquisitions; i++) // warm up: JIT and the pooled async method builders
+			AcquireBoth();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < acquisitions; i++)
+			AcquireBoth();
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+		Assert.Equal(0, allocated);
+		Assert.Equal(4 * acquisitions, counter.Value);
+
+		void AcquireBoth()
+		{
+			var plain = asyncLock.LockAsync(counter, static c => { c.Value++; return ValueTask.CompletedTask; });
+			var withResult = asyncLock.LockAsync(counter, static c => new ValueTask<Int32>(++c.Value));
+			Assert.True(plain.IsCompletedSuccessfully && withResult.IsCompletedSuccessfully);
+		}
+	}
+
+	[Fact]
+	public async Task ResultOverloadProvidesMutualExclusion()
+	{
+		var asyncLock = new AsyncLock();
+		var inGuardedSection = false;
+		var next = 0;
+		Task<Int32> Acquire() => Task.Run(async () => await asyncLock.LockAsync(async () =>
+		{
+			Assert.False(inGuardedSection);
+			inGuardedSection = true;
+			var value = next++;
+			await Task.Yield();
+			inGuardedSection = false;
+			return value;
+		}));
+
+		var results = await Task.WhenAll(Enumerable.Range(0, 5_000).Select(_ => Acquire()));
+
+		Assert.Equal(Enumerable.Range(0, 5_000), results.Order());
+	}
+
+	[Fact]
+	public async Task ResultOverloadSupportsCancellationAndPropagatesExceptions()
+	{
+		var asyncLock = new AsyncLock();
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var holder = asyncLock.LockAsync(async () =>
+		{
+			held.SetResult();
+			await release.Task;
+			return 1;
+		}).AsTask();
+		await held.Task;
+
+		using var cts = new CancellationTokenSource();
+		var cancelledEntered = false;
+		var cancelled = asyncLock.LockAsync(() => { cancelledEntered = true; return new ValueTask<Int32>(2); },
+			cts.Token).AsTask();
+		var faulting = asyncLock.LockAsync<Int32>(() => throw new InvalidOperationException("inside the lock")).AsTask();
+
+		await cts.CancelAsync();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+		release.SetResult();
+
+		Assert.Equal(1, await holder);
+		var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => faulting);
+		Assert.Equal("inside the lock", exception.Message);
+		Assert.False(cancelledEntered, "the cancelled attempt must never enter the critical section");
+		Assert.Equal(3, await asyncLock.LockAsync(() => new ValueTask<Int32>(3))); // the lock is free again
 	}
 }

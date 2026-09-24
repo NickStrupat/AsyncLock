@@ -51,24 +51,150 @@ public sealed class AsyncLock : IAsyncLock
 	/// <returns>A task that completes once the delegate has run and the lock has been released.</returns>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
 	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <remarks>
+	/// A lambda that captures variables allocates a closure on every call. To avoid that, pass what it needs as
+	/// state with <see cref="LockAsync{TState}(TState, Func{TState, ValueTask}, CancellationToken)"/> and a
+	/// <see langword="static"/> lambda.
+	/// </remarks>
 	public ValueTask LockAsync(Func<ValueTask> whenLocked, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(whenLocked);
+		return LockCoreAsync(new Callback(whenLocked), cancellationToken);
+	}
+
+	/// <summary>
+	/// Asynchronously waits for the lock to be acquired, then executes the supplied delegate with
+	/// <paramref name="state"/> and releases the lock. Any exceptions thrown by the delegate are propagated to the
+	/// caller.
+	/// </summary>
+	/// <typeparam name="TState">The type of the state passed to <paramref name="whenLocked"/>.</typeparam>
+	/// <param name="state">The state to pass to <paramref name="whenLocked"/>.</param>
+	/// <param name="whenLocked">
+	/// The delegate to execute when the lock is acquired. Passing its inputs as <paramref name="state"/> lets it be a
+	/// <see langword="static"/> lambda, so no closure is allocated.
+	/// </param>
+	/// <param name="cancellationToken">
+	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
+	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// </param>
+	/// <returns>A task that completes once the delegate has run and the lock has been released.</returns>
+	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
+	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <example>
+	/// <code>await gate.LockAsync(cache, static c => c.RefreshAsync());</code>
+	/// </example>
+	public ValueTask LockAsync<TState>(TState state, Func<TState, ValueTask> whenLocked,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(whenLocked);
+		return LockCoreAsync(new StateCallback<TState>(state, whenLocked), cancellationToken);
+	}
+
+	/// <summary>
+	/// Asynchronously waits for the lock to be acquired, then executes the supplied delegate, releases the lock and
+	/// returns the delegate's result. Any exceptions thrown by the delegate are propagated to the caller.
+	/// </summary>
+	/// <typeparam name="TResult">The type of the result produced by <paramref name="whenLocked"/>.</typeparam>
+	/// <param name="whenLocked">The delegate to execute when the lock is acquired.</param>
+	/// <param name="cancellationToken">
+	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
+	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// </param>
+	/// <returns>
+	/// A task that completes with <paramref name="whenLocked"/>'s result once it has run and the lock has been
+	/// released.
+	/// </returns>
+	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
+	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <example>
+	/// <code>var balance = await gate.LockAsync(async () => await account.GetBalanceAsync());</code>
+	/// </example>
+	public ValueTask<TResult> LockAsync<TResult>(Func<ValueTask<TResult>> whenLocked,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(whenLocked);
+		return LockCoreAsync<ResultCallback<TResult>, TResult>(new(whenLocked), cancellationToken);
+	}
+
+	/// <summary>
+	/// Asynchronously waits for the lock to be acquired, then executes the supplied delegate with
+	/// <paramref name="state"/>, releases the lock and returns the delegate's result. Any exceptions thrown by the
+	/// delegate are propagated to the caller.
+	/// </summary>
+	/// <typeparam name="TState">The type of the state passed to <paramref name="whenLocked"/>.</typeparam>
+	/// <typeparam name="TResult">The type of the result produced by <paramref name="whenLocked"/>.</typeparam>
+	/// <param name="state">The state to pass to <paramref name="whenLocked"/>.</param>
+	/// <param name="whenLocked">
+	/// The delegate to execute when the lock is acquired. Passing its inputs as <paramref name="state"/> lets it be a
+	/// <see langword="static"/> lambda, so no closure is allocated.
+	/// </param>
+	/// <param name="cancellationToken">
+	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
+	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// </param>
+	/// <returns>
+	/// A task that completes with <paramref name="whenLocked"/>'s result once it has run and the lock has been
+	/// released.
+	/// </returns>
+	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
+	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <example>
+	/// <code>var next = await gate.LockAsync(counter, static c => new ValueTask&lt;Int32&gt;(++c.Value));</code>
+	/// </example>
+	public ValueTask<TResult> LockAsync<TState, TResult>(TState state, Func<TState, ValueTask<TResult>> whenLocked,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(whenLocked);
+		return LockCoreAsync<StateResultCallback<TState, TResult>, TResult>(new(state, whenLocked), cancellationToken);
+	}
+
+	private ValueTask LockCoreAsync<TCallback>(TCallback callback, CancellationToken cancellationToken)
+		where TCallback : struct, ICallback
+	{
 		if (cancellationToken.IsCancellationRequested)
 			return ValueTask.FromCanceled(cancellationToken);
 
 		// Uncontended: take the lock word. A free lock needs no waiting, so a token is irrelevant here.
-		return Interlocked.CompareExchange(ref tail, Held, null) is null
-			? RunNodelessAsync(whenLocked)
-			: LockQueuedAsync(whenLocked, cancellationToken);
+		return TryTakeLockWord() ? RunNodelessAsync(callback) : LockQueuedAsync(callback, cancellationToken);
 	}
 
+	private ValueTask<TResult> LockCoreAsync<TCallback, TResult>(TCallback callback, CancellationToken cancellationToken)
+		where TCallback : struct, ICallback<TResult>
+	{
+		if (cancellationToken.IsCancellationRequested)
+			return ValueTask.FromCanceled<TResult>(cancellationToken);
+
+		return TryTakeLockWord()
+			? RunNodelessForResultAsync<TCallback, TResult>(callback)
+			: LockQueuedForResultAsync<TCallback, TResult>(callback, cancellationToken);
+	}
+
+	private Boolean TryTakeLockWord() => Interlocked.CompareExchange(ref tail, Held, null) is null;
+
+	// Each async method below comes in two shapes, one returning the delegate's result: an async method cannot be
+	// generic over returning ValueTask or ValueTask<TResult>. Everything but the awaits lives in the helpers they
+	// share (ReleaseNodeless, Enqueue, Turn, Leave), so keep each pair's awaits in step.
+
 	[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
-	private async ValueTask RunNodelessAsync(Func<ValueTask> whenLocked)
+	private async ValueTask RunNodelessAsync<TCallback>(TCallback callback) where TCallback : struct, ICallback
 	{
 		try
 		{
-			await whenLocked().ConfigureAwait(false);
+			await callback.InvokeAsync().ConfigureAwait(false);
+		}
+		finally
+		{
+			ReleaseNodeless();
+		}
+	}
+
+	[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+	private async ValueTask<TResult> RunNodelessForResultAsync<TCallback, TResult>(TCallback callback)
+		where TCallback : struct, ICallback<TResult>
+	{
+		try
+		{
+			return await callback.InvokeAsync().ConfigureAwait(false);
 		}
 		finally
 		{
@@ -93,7 +219,74 @@ public sealed class AsyncLock : IAsyncLock
 	}
 
 	[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
-	private async ValueTask LockQueuedAsync(Func<ValueTask> whenLocked, CancellationToken cancellationToken)
+	private async ValueTask LockQueuedAsync<TCallback>(TCallback callback, CancellationToken cancellationToken)
+		where TCallback : struct, ICallback
+	{
+		var turn = Enqueue();
+		var ctr = default(CancellationTokenRegistration);
+		var granted = true;
+		try
+		{
+			if (turn.MustWait)
+			{
+				if (cancellationToken.CanBeCanceled)
+				{
+					if (turn.TryBridge())
+					{
+						ctr = cancellationToken.UnsafeRegister(static o => ((Node)o!).OnCancel(), turn.Next);
+						granted = await turn.Next.WaitTask.ConfigureAwait(false);
+						cancellationToken.ThrowIfCancellationRequested();
+					}
+				}
+				else if (turn.Prev == Held)
+					await turn.Next.WaitTask.ConfigureAwait(false);
+				else
+					await turn.Prev!.GrantTask.ConfigureAwait(false);
+			}
+			await callback.InvokeAsync().ConfigureAwait(false);
+		}
+		finally
+		{
+			Leave(turn, granted, ctr); // synchronous: see Leave
+		}
+	}
+
+	[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+	private async ValueTask<TResult> LockQueuedForResultAsync<TCallback, TResult>(TCallback callback,
+		CancellationToken cancellationToken)
+		where TCallback : struct, ICallback<TResult>
+	{
+		var turn = Enqueue();
+		var ctr = default(CancellationTokenRegistration);
+		var granted = true;
+		try
+		{
+			if (turn.MustWait)
+			{
+				if (cancellationToken.CanBeCanceled)
+				{
+					if (turn.TryBridge())
+					{
+						ctr = cancellationToken.UnsafeRegister(static o => ((Node)o!).OnCancel(), turn.Next);
+						granted = await turn.Next.WaitTask.ConfigureAwait(false);
+						cancellationToken.ThrowIfCancellationRequested();
+					}
+				}
+				else if (turn.Prev == Held)
+					await turn.Next.WaitTask.ConfigureAwait(false);
+				else
+					await turn.Prev!.GrantTask.ConfigureAwait(false);
+			}
+			return await callback.InvokeAsync().ConfigureAwait(false);
+		}
+		finally
+		{
+			Leave(turn, granted, ctr); // synchronous: see Leave
+		}
+	}
+
+	/// <summary>Joins the queue behind the current tail and works out whether the lock must be waited for.</summary>
+	private Turn Enqueue()
 	{
 		var next = nodePool.Rent();
 		var prev = Interlocked.Exchange(ref tail, next);
@@ -108,47 +301,27 @@ public sealed class AsyncLock : IAsyncLock
 		}
 		else
 			mustWait = prev is not null && !prev.IsCompleted;
+		return new(next, prev, mustWait);
+	}
 
-		var ctr = default(CancellationTokenRegistration);
-		var granted = true;
-		try
-		{
-			if (mustWait)
-			{
-				if (cancellationToken.CanBeCanceled)
-				{
-					// Park on our own latch, to be granted inline by whoever releases ahead of us: prev's
-					// owner through the bridge, or the nodeless owner through handoff. If prev released before
-					// we could bridge to it, the lock is already ours and there is nothing to wait for.
-					if (prev == Held || prev!.TryBridge(next))
-					{
-						ctr = cancellationToken.UnsafeRegister(static o => ((Node)o!).OnCancel(), next);
-						granted = await next.WaitTask.ConfigureAwait(false);
-						cancellationToken.ThrowIfCancellationRequested();
-					}
-				}
-				else if (prev == Held)
-					await next.WaitTask.ConfigureAwait(false);
-				else
-					await prev!.GrantTask.ConfigureAwait(false);
-			}
-			await whenLocked().ConfigureAwait(false);
-		}
-		finally
-		{
-			// Disarm first: everything below can recycle next. Dispose, not DisposeAsync: it waits the same way for
-			// a callback already running (OnCancel, which is brief), and an await in this finally would make the
-			// compiler catch and rethrow a cancelled wait's exception, a second throw per cancellation.
-			ctr.Dispose();
+	/// <summary>
+	/// Ends a queued acquisition: releases the lock if it was granted, then finishes with both nodes. Synchronous on
+	/// purpose: an await in the callers' finally would make the compiler catch and rethrow a cancelled wait's
+	/// exception, a second throw per cancellation.
+	/// </summary>
+	private void Leave(Turn turn, Boolean granted, CancellationTokenRegistration ctr)
+	{
+		// Disarm first: everything below can recycle next. Dispose waits for a callback already running (OnCancel,
+		// which is brief), so it cannot touch next once recycled.
+		ctr.Dispose();
 
-			if (granted)
-				ReleaseQueued(next);
-			else
-				next.Finish(); // cancelled: the bridge completes next once our turn genuinely arrives
+		if (granted)
+			ReleaseQueued(turn.Next);
+		else
+			turn.Next.Finish(); // cancelled: the bridge completes next once our turn genuinely arrives
 
-			if (prev is not null && prev != Held)
-				prev.Finish();
-		}
+		if (turn.Prev is not null && turn.Prev != Held)
+			turn.Prev.Finish();
 	}
 
 	private void ReleaseQueued(Node node)
@@ -168,6 +341,58 @@ public sealed class AsyncLock : IAsyncLock
 	{
 		node.Reset();
 		nodePool.Return(node);
+	}
+
+	/// <summary>A queued acquisition's place in line: its own node, and the one it waits behind.</summary>
+	private readonly struct Turn(Node next, Node? prev, Boolean mustWait)
+	{
+		public Node Next { get; } = next;
+
+		/// <summary>The node ahead: <see cref="Held"/> for a nodeless owner, or null if the lock was free.</summary>
+		public Node? Prev { get; } = prev;
+
+		/// <summary>False if the lock was already ours on arrival.</summary>
+		public Boolean MustWait { get; } = mustWait;
+
+		/// <summary>
+		/// For a cancellable wait: parks on our own latch, to be granted inline by whoever releases ahead of us —
+		/// prev's owner through the bridge, or the nodeless owner through handoff. Returns false if prev released
+		/// before we could bridge to it, in which case the lock is already ours and there is nothing to wait for.
+		/// </summary>
+		public Boolean TryBridge() => Prev == Held || Prev!.TryBridge(Next);
+	}
+
+	// The critical section, as a struct so that the async methods are specialized per delegate shape, with no boxing
+	// and no virtual call.
+	private interface ICallback
+	{
+		ValueTask InvokeAsync();
+	}
+
+	private interface ICallback<TResult>
+	{
+		ValueTask<TResult> InvokeAsync();
+	}
+
+	private readonly struct Callback(Func<ValueTask> whenLocked) : ICallback
+	{
+		public ValueTask InvokeAsync() => whenLocked();
+	}
+
+	private readonly struct StateCallback<TState>(TState state, Func<TState, ValueTask> whenLocked) : ICallback
+	{
+		public ValueTask InvokeAsync() => whenLocked(state);
+	}
+
+	private readonly struct ResultCallback<TResult>(Func<ValueTask<TResult>> whenLocked) : ICallback<TResult>
+	{
+		public ValueTask<TResult> InvokeAsync() => whenLocked();
+	}
+
+	private readonly struct StateResultCallback<TState, TResult>(TState state, Func<TState, ValueTask<TResult>> whenLocked)
+		: ICallback<TResult>
+	{
+		public ValueTask<TResult> InvokeAsync() => whenLocked(state);
 	}
 
 	/// <summary>
