@@ -256,4 +256,50 @@ public class AsyncLockTests
 		Assert.True(liveEntered, "the turn must reach the live waiter through the whole cancelled chain");
 		Assert.Equal(0, Volatile.Read(ref cancelledEntered));
 	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task DeepQueueOfSynchronousWaitersDoesNotOverflowTheStack(Boolean cancellable)
+	{
+		// Each waiter's critical section completes synchronously, so it releases the moment it is granted. If a
+		// grant resumed the waiter inline on the releasing thread (a synchronous continuation), every waiter would
+		// run inside its predecessor's release and a long queue would overflow the stack, killing the process.
+		// Granting asynchronously keeps each waiter on its own stack. Run with and without a cancellable token:
+		// the two resume through different signals.
+		const Int32 queuedWaiters = 100_000;
+		var asyncLock = new AsyncLock();
+		using var cts = new CancellationTokenSource();
+		var token = cancellable ? cts.Token : CancellationToken.None;
+
+		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var holder = asyncLock.LockAsync(async () =>
+		{
+			held.SetResult();
+			await release.Task;
+		}).AsTask();
+		await held.Task;
+
+		var entered = 0;
+		var outOfOrder = 0;
+		var waiters = new Task[queuedWaiters];
+		for (var i = 0; i < waiters.Length; i++)
+		{
+			var position = i;
+			waiters[i] = asyncLock.LockAsync(() =>
+			{
+				if (entered++ != position)
+					outOfOrder++;
+				return ValueTask.CompletedTask;
+			}, token).AsTask();
+		}
+
+		release.SetResult();
+		await holder;
+		await Task.WhenAll(waiters).WaitAsync(TimeSpan.FromSeconds(30));
+
+		Assert.Equal(queuedWaiters, entered);
+		Assert.Equal(0, outOfOrder);
+	}
 }
