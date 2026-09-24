@@ -3,6 +3,60 @@ Locks for expressing mutual exclusion in async code
 
 ## Installation
 
+```sh
+dotnet add package NickStrupat.AsyncLock
+```
+
+It targets .NET 8 and later, and brings its [analyzers](#analyzers) with it.
+
+## Usage
+
+Pass the critical section to `LockAsync` as a delegate returning `ValueTask` (an `async` lambda works for code that
+awaits a `Task`); the lock is released when it completes, whether or not it throws.
+
+```csharp
+using NickStrupat;
+
+private readonly AsyncLock gate = new();
+
+await gate.LockAsync(async () =>
+{
+    // Only one caller at a time runs this.
+    await SaveAsync();
+});
+```
+
+Return a value from the critical section:
+
+```csharp
+var balance = await gate.LockAsync(async () => await account.GetBalanceAsync());
+```
+
+A lambda that captures variables allocates a closure on every call. Pass what it needs as state instead, with a
+`static` lambda, to avoid that:
+
+```csharp
+await gate.LockAsync(this, static async self => await self.SaveAsync());
+var next = await gate.LockAsync(counter, static c => new ValueTask<int>(++c.Value));
+```
+
+Every overload takes an optional `CancellationToken`:
+
+```csharp
+await gate.LockAsync(async () => await SaveAsync(), cancellationToken);
+```
+
+What to know:
+
+- **FIFO.** Waiters acquire the lock in the order they asked for it.
+- **Not reentrant.** Calling `LockAsync` on the same lock from inside its own critical section never completes: the
+  inner call waits for the outer one to release.
+- **The token only cancels the wait.** A cancelled wait throws `OperationCanceledException` and never runs the
+  critical section; a lock that is free is taken without looking at the token. Once the critical section is running,
+  cancelling is up to your code, so pass the token into it.
+- **Exceptions propagate.** An exception thrown by the critical section is rethrown to the caller after the lock is
+  released.
+
 ## Analyzers
 
 The package ships a Roslyn analyzer that catches monitor-based synchronisation applied to an async
