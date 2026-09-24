@@ -13,6 +13,24 @@
         </WeaverConfiguration>
     </PropertyGroup>
 
+    <PropertyGroup>
+        <!-- "AsyncLock" is taken on nuget.org by an unrelated package. -->
+        <PackageId>NickStrupat.AsyncLock</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>Nick Strupat</Authors>
+        <Description>A thread-safe, FIFO, allocation-free async lock for .NET, with a Roslyn analyzer that catches lock statements and Monitor calls mistakenly applied to it.</Description>
+        <PackageTags>async;lock;mutex;asynclock;synchronization;concurrency;valuetask</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/NickStrupat/AsyncLock</PackageProjectUrl>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
     <ItemGroup>
         <PackageReference Include="RuntimeNullables.Fody" Version="2.1.0" PrivateAssets="all"/>
     </ItemGroup>
@@ -31,6 +49,8 @@
         <!-- Ships the analyzer inside this package so consumers get it automatically. -->
         <None Include="..\AsyncLock.Analyzers\bin\$(Configuration)\netstandard2.0\AsyncLock.Analyzers.dll"
               Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false"/>
     </ItemGroup>
 
 </Project>
