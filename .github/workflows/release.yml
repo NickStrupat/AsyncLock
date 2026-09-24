@@ -1,0 +1,31 @@
+name: Release
+
+# Push a tag such as v1.0.0 to publish that version. Requires a NUGET_API_KEY repository secret.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet build -c Release
+      - run: dotnet test -c Release --no-build
+      # The tag is the version, so the package and the tag cannot disagree.
+      - run: dotnet pack src/AsyncLock -c Release --no-build -o artifacts -p:Version=${GITHUB_REF_NAME#v}
+      # Pushing the .nupkg also pushes the .snupkg beside it.
+      - run: >-
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

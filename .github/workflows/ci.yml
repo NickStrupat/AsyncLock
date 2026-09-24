@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    # x64 (Linux, Windows) and ARM64 (macOS): the lock is lock-free, and ARM64's weaker memory model is where a
+    # missing barrier would show.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet build -c Release
+      # Release: the allocation tests are skipped in Debug, whose async state machines are classes.
+      - run: dotnet test -c Release --no-build
+      - run: dotnet pack src/AsyncLock -c Release --no-build -o artifacts
+        if: matrix.os == 'ubuntu-latest'
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: packages
+          path: artifacts/
