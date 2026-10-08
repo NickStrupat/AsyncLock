@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag such as v1.0.0 to publish that version. Requires a NUGET_API_KEY repository secret.
+# Push a tag such as v1.0.0 to publish that version. Publishes through nuget.org Trusted Publishing, which needs a
+# policy on nuget.org for owner NickStrupat, repository AsyncLock, workflow file release.yml.
 on:
   push:
     tags: ['v*']
@@ -10,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # lets NuGet/login exchange GitHub's OIDC token for a short-lived API key
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -21,6 +23,11 @@ jobs:
       - run: dotnet test -c Release --no-build
       # The tag is the version, so the package and the tag cannot disagree.
       - run: dotnet pack src/AsyncLock -c Release --no-build -o artifacts -p:Version=${GITHUB_REF_NAME#v}
+      # The key lasts an hour, so request it only once the package is built.
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: NickStrupat
       # Pushing the .nupkg also pushes the .snupkg beside it.
       - run: >-
           dotnet nuget push "artifacts/*.nupkg"
@@ -28,4 +35,4 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
