@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AsyncLock.Analyzers/AsyncLock.Analyzers.csproj" />
+    <Project Path="src/AsyncLock/AsyncLock.csproj" />
+    <Project Path="src/AsyncSemaphore/AsyncSemaphore.csproj" />
+    <Project Path="src/Candidates/Candidates.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/AnalyzerTests/AnalyzerTests.csproj" />
+    <Project Path="test/BenchmarkSuite/BenchmarkSuite.csproj" />
+    <Project Path="test/UnitTests/UnitTests.csproj" />
+  </Folder>
+</Solution>
