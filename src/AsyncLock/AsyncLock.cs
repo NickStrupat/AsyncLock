@@ -45,12 +45,16 @@ public sealed class AsyncLock : IAsyncLock
 	/// </summary>
 	/// <param name="whenLocked">The delegate to execute when the lock is acquired.</param>
 	/// <param name="cancellationToken">
-	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
-	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// The cancellation token that can be used to cancel waiting for the lock. A token that is already cancelled
+	/// fails the call without trying the lock. Otherwise it is only observed while waiting: an acquisition that
+	/// finds the lock free takes it without registering with the token.
 	/// </param>
 	/// <returns>A task that completes once the delegate has run and the lock has been released.</returns>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
-	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <exception cref="OperationCanceledException">
+	/// Thrown when <paramref name="cancellationToken"/> is already cancelled, or is cancelled during the wait for the
+	/// lock.
+	/// </exception>
 	/// <remarks>
 	/// A lambda that captures variables allocates a closure on every call. To avoid that, pass what it needs as
 	/// state with <see cref="LockAsync{TState}(TState, Func{TState, ValueTask}, CancellationToken)"/> and a
@@ -74,12 +78,16 @@ public sealed class AsyncLock : IAsyncLock
 	/// <see langword="static"/> lambda, so no closure is allocated.
 	/// </param>
 	/// <param name="cancellationToken">
-	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
-	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// The cancellation token that can be used to cancel waiting for the lock. A token that is already cancelled
+	/// fails the call without trying the lock. Otherwise it is only observed while waiting: an acquisition that
+	/// finds the lock free takes it without registering with the token.
 	/// </param>
 	/// <returns>A task that completes once the delegate has run and the lock has been released.</returns>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
-	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <exception cref="OperationCanceledException">
+	/// Thrown when <paramref name="cancellationToken"/> is already cancelled, or is cancelled during the wait for the
+	/// lock.
+	/// </exception>
 	/// <example>
 	/// <code>await gate.LockAsync(cache, static c => c.RefreshAsync());</code>
 	/// </example>
@@ -97,15 +105,19 @@ public sealed class AsyncLock : IAsyncLock
 	/// <typeparam name="TResult">The type of the result produced by <paramref name="whenLocked"/>.</typeparam>
 	/// <param name="whenLocked">The delegate to execute when the lock is acquired.</param>
 	/// <param name="cancellationToken">
-	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
-	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// The cancellation token that can be used to cancel waiting for the lock. A token that is already cancelled
+	/// fails the call without trying the lock. Otherwise it is only observed while waiting: an acquisition that
+	/// finds the lock free takes it without registering with the token.
 	/// </param>
 	/// <returns>
 	/// A task that completes with <paramref name="whenLocked"/>'s result once it has run and the lock has been
 	/// released.
 	/// </returns>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
-	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <exception cref="OperationCanceledException">
+	/// Thrown when <paramref name="cancellationToken"/> is already cancelled, or is cancelled during the wait for the
+	/// lock.
+	/// </exception>
 	/// <example>
 	/// <code>var balance = await gate.LockAsync(async () => await account.GetBalanceAsync());</code>
 	/// </example>
@@ -129,15 +141,19 @@ public sealed class AsyncLock : IAsyncLock
 	/// <see langword="static"/> lambda, so no closure is allocated.
 	/// </param>
 	/// <param name="cancellationToken">
-	/// The cancellation token that can be used to cancel waiting for the lock. It is only observed while
-	/// waiting: an acquisition that finds the lock free takes it without consulting the token.
+	/// The cancellation token that can be used to cancel waiting for the lock. A token that is already cancelled
+	/// fails the call without trying the lock. Otherwise it is only observed while waiting: an acquisition that
+	/// finds the lock free takes it without registering with the token.
 	/// </param>
 	/// <returns>
 	/// A task that completes with <paramref name="whenLocked"/>'s result once it has run and the lock has been
 	/// released.
 	/// </returns>
 	/// <exception cref="ArgumentNullException">Thrown when <paramref name="whenLocked"/> is <see langword="null"/>.</exception>
-	/// <exception cref="OperationCanceledException">Thrown when the wait for the lock is cancelled.</exception>
+	/// <exception cref="OperationCanceledException">
+	/// Thrown when <paramref name="cancellationToken"/> is already cancelled, or is cancelled during the wait for the
+	/// lock.
+	/// </exception>
 	/// <example>
 	/// <code>var next = await gate.LockAsync(counter, static c => new ValueTask&lt;Int32&gt;(++c.Value));</code>
 	/// </example>

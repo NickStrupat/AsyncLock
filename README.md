@@ -51,9 +51,10 @@ What to know:
 - **FIFO.** Waiters acquire the lock in the order they asked for it.
 - **Not reentrant.** Calling `LockAsync` on the same lock from inside its own critical section never completes: the
   inner call waits for the outer one to release.
-- **The token only cancels the wait.** A cancelled wait throws `OperationCanceledException` and never runs the
-  critical section; a lock that is free is taken without looking at the token. Once the critical section is running,
-  cancelling is up to your code, so pass the token into it.
+- **The token only cancels the wait.** A token that is already cancelled, or a wait that is cancelled, throws
+  `OperationCanceledException` and never runs the critical section. A lock that is free is taken without waiting, so
+  there is nothing left for the token to cancel. Once the critical section is running, cancelling is up to your code,
+  so pass the token into it.
 - **Exceptions propagate.** An exception thrown by the critical section is rethrown to the caller after the lock is
   released.
 

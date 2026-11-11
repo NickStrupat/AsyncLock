@@ -180,6 +180,30 @@ public class AsyncLockTests
 		Assert.False(secondTaken, "the cancelled attempt must never enter the critical section");
 	}
 
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task AlreadyCancelledTokenFailsWithoutTakingAFreeLock(Boolean withResult)
+	{
+		// The token is checked once on entry, before the lock is tried, so a call that arrives already cancelled
+		// fails even though the lock is free and it would not have had to wait.
+		var asyncLock = new AsyncLock();
+		using var cts = new CancellationTokenSource();
+		await cts.CancelAsync();
+
+		var entered = false;
+		Task attempt = withResult
+			? asyncLock.LockAsync(() => { entered = true; return new ValueTask<Int32>(1); }, cts.Token).AsTask()
+			: asyncLock.LockAsync(() => { entered = true; return ValueTask.CompletedTask; }, cts.Token).AsTask();
+
+		var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => attempt);
+		Assert.Equal(cts.Token, exception.CancellationToken);
+		Assert.False(entered, "an already-cancelled attempt must never enter the critical section");
+
+		var next = asyncLock.LockAsync(() => ValueTask.CompletedTask);
+		Assert.True(next.IsCompletedSuccessfully, "the rejected attempt must leave the lock free");
+	}
+
 	[Fact]
 	public async Task ConcurrentCancellationPreservesMutualExclusion()
 	{
