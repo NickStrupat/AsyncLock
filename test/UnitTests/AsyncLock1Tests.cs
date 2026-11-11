@@ -5,6 +5,8 @@ using Xunit.Abstractions;
 
 namespace UnitTests;
 
+// DoesNotAllocateWhenNotContended compares the process's memory before and after, so nothing else may be running.
+[Collection(ProcessWideMemoryCollection.Name)]
 public class AsyncLock1Tests(ITestOutputHelper output)
 {
 	readonly ITestOutputHelper output = output; // only used in DEBUG builds
