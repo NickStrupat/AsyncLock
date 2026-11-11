@@ -19,8 +19,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
-            8.0.x
             10.0.x
+            11.0.x
       - run: dotnet build -c Release
       # Release: the allocation tests are skipped in Debug, whose async state machines are classes.
       - run: dotnet test -c Release --no-build

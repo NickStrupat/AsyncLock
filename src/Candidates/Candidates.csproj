@@ -3,7 +3,7 @@
     <!-- Alternative lock implementations, kept for comparison, testing and benchmarking. Not packed: the
          AsyncLock package ships exactly one implementation (AsyncLock). -->
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <RootNamespace>NickStrupat</RootNamespace>
         <Nullable>enable</Nullable>
         <WarningsAsErrors>Nullable</WarningsAsErrors>

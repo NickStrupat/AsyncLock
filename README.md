@@ -7,7 +7,7 @@ Locks for expressing mutual exclusion in async code
 dotnet add package NickStrupat.AsyncLock
 ```
 
-It targets .NET 8 and later, and brings its [analyzers](#analyzers) with it.
+It targets .NET 10 and later, and brings its [analyzers](#analyzers) with it.
 
 ## Usage
 
