@@ -395,6 +395,26 @@ public class AsyncLockTests
 	}
 
 	[Fact]
+	public void NewLockAllocatesOnlyItself()
+	{
+		// A lock that is never contended needs no queue nodes, so it should not pay for a pool of them up front:
+		// one lock per key or per entity is a common pattern, and those locks are mostly idle. The lock is an object
+		// header and four references (48 bytes on a 64-bit runtime); the bound leaves room for one more field.
+		const Int32 maxBytesPerLock = 56;
+		const Int32 locks = 1_000;
+		var keep = new AsyncLock[locks];
+
+		keep[0] = new AsyncLock(); // warm up: the shared sentinel nodes are allocated once, by the first lock
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < locks; i++)
+			keep[i] = new AsyncLock();
+		var bytesPerLock = (GC.GetAllocatedBytesForCurrentThread() - before) / locks;
+
+		Assert.InRange(bytesPerLock, 1, maxBytesPerLock);
+		GC.KeepAlive(keep);
+	}
+
+	[Fact]
 	public async Task ResultOverloadProvidesMutualExclusion()
 	{
 		var asyncLock = new AsyncLock();

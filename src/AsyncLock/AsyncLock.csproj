@@ -39,6 +39,8 @@
         <!-- IAsyncLock is internal; these implement it, or test and benchmark through it. -->
         <InternalsVisibleTo Include="Candidates"/>
         <InternalsVisibleTo Include="BenchmarkSuite"/>
+        <!-- The pool types are internal, and are tested directly. -->
+        <InternalsVisibleTo Include="UnitTests"/>
     </ItemGroup>
 
     <ItemGroup>

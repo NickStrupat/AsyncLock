@@ -17,8 +17,6 @@ namespace NickStrupat;
 /// </remarks>
 public sealed class AsyncLock : IAsyncLock
 {
-	private const Int32 MaxRetainedInPool = 32;
-
 	// tail:  null  - free
 	//        Held  - held by a nodeless owner, nobody queued
 	//        node  - the queue's tail; that node's owner holds the lock or is waiting for it
@@ -31,12 +29,16 @@ public sealed class AsyncLock : IAsyncLock
 	private static readonly Node Held = new(null);
 	private static readonly Node Released = new(null);
 
-	private readonly ObjectPool<Node, AsyncLock> nodePool;
+	// Idle nodes. Held inline and created empty, so a lock that is never contended carries no pool at all. Not
+	// readonly: TieredPool is a mutable struct, and calls on a readonly field would act on a copy.
+	private TieredPool<Node> nodePool;
 	private Node? tail;
 	private Node? handoff;
 
 	/// <summary>Creates an unlocked lock.</summary>
-	public AsyncLock() => nodePool = new(MaxRetainedInPool, static self => new Node(self), this);
+	public AsyncLock()
+	{
+	}
 
 	/// <summary>
 	/// Asynchronously waits for the lock to be acquired.
@@ -304,7 +306,7 @@ public sealed class AsyncLock : IAsyncLock
 	/// <summary>Joins the queue behind the current tail and works out whether the lock must be waited for.</summary>
 	private Turn Enqueue()
 	{
-		var next = nodePool.Rent();
+		var next = nodePool.TryRent() ?? new Node(this);
 		var prev = Interlocked.Exchange(ref tail, next);
 
 		// prev is null if the lock was freed between our failed CAS and the exchange: we hold it.
