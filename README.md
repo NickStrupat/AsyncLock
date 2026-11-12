@@ -57,6 +57,9 @@ What to know:
   so pass the token into it.
 - **Exceptions propagate.** An exception thrown by the critical section is rethrown to the caller after the lock is
   released.
+- **A cancelled wait is cleaned up when its turn comes.** It leaves a placeholder of about 130 bytes in the queue
+  until then. If the lock is held for a long time while many waits are cancelled behind it, that memory adds up
+  (100,000 cancelled waits hold about 13 MB) and is freed when the holder releases.
 
 ## Analyzers
 

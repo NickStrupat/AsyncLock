@@ -14,6 +14,11 @@ namespace NickStrupat;
 /// all. Only under contention does it fall back to a queue of pooled nodes, handing the lock to each waiter in arrival order, and it returns to the lock word as soon as
 /// the queue drains. Cancelled waiters stay in the queue and pass the turn on when it reaches them, so a
 /// cancellation never admits anyone early or strands anyone behind it.
+/// <para>
+/// The cost of that is memory: each cancelled wait leaves its queue node behind (about 130 bytes) until the turn
+/// reaches it. A lock that is held for a long time while waits are cancelled behind it therefore holds that much per
+/// cancelled wait, and frees all of it when the holder releases.
+/// </para>
 /// </remarks>
 public sealed class AsyncLock : IAsyncLock
 {
@@ -336,7 +341,12 @@ public sealed class AsyncLock : IAsyncLock
 		if (granted)
 			ReleaseQueued(turn.Next);
 		else
-			turn.Next.Finish(); // cancelled: the bridge completes next once our turn genuinely arrives
+		{
+			// Cancelled: next stays queued until our turn genuinely arrives, when the bridge completes it. That can
+			// be a long time, so it must not go on holding our suspended async method meanwhile.
+			turn.Next.ReleaseWaiter();
+			turn.Next.Finish();
+		}
 
 		if (turn.Prev is not null && turn.Prev != Held)
 			turn.Prev.Finish();
@@ -495,6 +505,14 @@ public sealed class AsyncLock : IAsyncLock
 			if (Interlocked.CompareExchange(ref waitState, Cancelled, Waiting) == Waiting)
 				waitCore.SetResult(false); // resume the waiter so it observes the cancellation
 		}
+
+		/// <summary>
+		/// Drops the wait latch's reference to its waiter: the continuation it resumed, and with it the waiter's
+		/// async state machine. Called by a cancelled owner once it has consumed <see cref="WaitTask"/> and disarmed
+		/// its cancellation callback. Nothing touches the latch after that (<see cref="Grant"/> only signals a node
+		/// that is still waiting), but the node itself stays queued until its turn arrives.
+		/// </summary>
+		public void ReleaseWaiter() => waitCore.Reset();
 
 		/// <summary>
 		/// Idempotently completes the grant signal, releasing the successor. Called by this node's owner
